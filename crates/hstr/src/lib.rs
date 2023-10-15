@@ -175,6 +175,9 @@ impl Drop for Atom {
         #[cold]
         #[inline(never)]
         fn drop_slow(arc: Arc<Entry>) {
+            if Arc::strong_count(&arc) == 1 {
+                eprintln!("Dropping `{:p}`", &*arc);
+            }
             drop(arc);
         }
     }
