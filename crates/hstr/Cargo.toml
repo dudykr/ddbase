@@ -23,10 +23,10 @@ triomphe = "0.1.9"
 [dev-dependencies]
 compact_str = "0.7.1"
 criterion = "0.5.1"
+dudy-malloc = { version = "0.1.0", path = "../dudy-malloc" }
 kstring = "2.0.0"
 num_cpus = "1.16.0"
 rayon = "1.8.0"
 smartstring = "1.0.1"
 smol_str = "0.2.0"
 string_cache = "0.8.7"
-swc_node_base = "0.5.8"
