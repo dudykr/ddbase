@@ -18,8 +18,8 @@ macro_rules! string_creation {
         let group = &mut $group;
 
         for len in $len {
-            group.bench_with_input(BenchmarkId::new("kdy_str", len), &len, |b, _| {
-                let mut store = kdy_str::AtomStore::default();
+            group.bench_with_input(BenchmarkId::new("hstr", len), &len, |b, _| {
+                let mut store = hstr::AtomStore::default();
 
                 b.iter_batched(
                     $setup(len),
@@ -30,11 +30,11 @@ macro_rules! string_creation {
                 );
             });
 
-            group.bench_with_input(BenchmarkId::new("kdy_str_slow", len), &len, |b, _| {
+            group.bench_with_input(BenchmarkId::new("hstr_slow", len), &len, |b, _| {
                 b.iter_batched(
                     $setup(len),
                     |text| {
-                        black_box(kdy_str::Atom::from(text));
+                        black_box(hstr::Atom::from(text));
                     },
                     BatchSize::SmallInput,
                 );
@@ -174,9 +174,9 @@ fn bench_hash_operation(c: &mut Criterion) {
 
     {
         for len in length {
-            group.bench_with_input(BenchmarkId::new("kdy_str", len), &len, |b, _| {
+            group.bench_with_input(BenchmarkId::new("hstr", len), &len, |b, _| {
                 let mut for_fairness = vec![];
-                let mut store = kdy_str::AtomStore::default();
+                let mut store = hstr::AtomStore::default();
                 b.iter_batched(
                     || prepare(len, &mut |s| store.atom(s)),
                     |(map, keys)| {
@@ -258,15 +258,15 @@ fn bench_parallel_creation(c: &mut Criterion) {
         let mut group = c.benchmark_group("parallel/create");
 
         for len in [64, 256, 1024] {
-            group.bench_with_input(BenchmarkId::new("kdy_str", len), &len, |b, _| {
+            group.bench_with_input(BenchmarkId::new("hstr", len), &len, |b, _| {
                 b.iter_batched(
                     || {
                         (0..num_cpus::get())
-                            .map(|_| kdy_str::AtomStore::default())
+                            .map(|_| hstr::AtomStore::default())
                             .collect::<Vec<_>>()
                     },
                     |stores| {
-                        let mut main_store = kdy_str::AtomStore::default();
+                        let mut main_store = hstr::AtomStore::default();
 
                         stores
                             .into_par_iter()

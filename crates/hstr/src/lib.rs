@@ -42,7 +42,7 @@ mod tests;
 ///
 /// ```rust
 /// # use std::mem::size_of;
-/// use kdy_str::Atom;
+/// use hstr::Atom;
 /// assert!(size_of::<Atom>() == size_of::<u64>());
 /// assert!(size_of::<Option<Atom>>() == size_of::<u64>());
 /// ````
