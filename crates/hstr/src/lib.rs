@@ -185,18 +185,7 @@ impl Drop for Atom {
 
 impl Clone for Atom {
     fn clone(&self) -> Self {
-        if self.is_dynamic() {
-            let ptr = Entry::cast(self.unsafe_data);
-            unsafe {
-                let arc = Arc::from_raw(ptr);
-                forget(no_inline_clone(&arc));
-                forget(arc);
-            }
-        }
-
-        Self {
-            unsafe_data: self.unsafe_data,
-        }
+        Self::from_alias(self.unsafe_data)
     }
 }
 
