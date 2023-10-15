@@ -94,7 +94,7 @@ where
 {
     let hash = calc_hash(&text);
     let entry = storage.insert_entry(text, hash);
-    eprintln!("Interning `{:p}`", &*entry);
+    eprintln!("Interning `{}:{:p}`", entry.string, &*entry);
 
     let ptr = Arc::as_ptr(&entry);
     let data = ptr as u64;
