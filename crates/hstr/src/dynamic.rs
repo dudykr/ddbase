@@ -71,13 +71,13 @@ impl AtomStore {
                 let cur_entry = self.insert_entry(Cow::Borrowed(&entry.string), entry.hash);
 
                 let ptr = Arc::as_ptr(&cur_entry);
+
                 let unsafe_data = ptr as u64;
 
                 entry.alias.store(unsafe_data, SeqCst);
 
+                // Don't drop the entry
                 self.extras.push(entry);
-
-                // We
             }
         }
     }
