@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "crates/dudy-malloc"
+]
+resolver = "2"
