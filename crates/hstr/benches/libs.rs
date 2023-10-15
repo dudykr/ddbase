@@ -1,4 +1,6 @@
-extern crate swc_node_base;
+#![allow(clippy::redundant_closure_call)]
+
+extern crate dudy_malloc;
 
 #[macro_use]
 extern crate criterion;
@@ -97,7 +99,7 @@ fn bench_basic_creation(c: &mut Criterion) {
     let length = [4usize, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
 
     {
-        let mut group = c.benchmark_group(&format!("single-thread/create/cached"));
+        let mut group = c.benchmark_group("single-thread/create/cached");
 
         string_creation!(group, length, |len| {
             let text = random_string(len);
@@ -108,7 +110,7 @@ fn bench_basic_creation(c: &mut Criterion) {
     }
 
     {
-        let mut group = c.benchmark_group(&format!("single-thread/create/not-cached"));
+        let mut group = c.benchmark_group("single-thread/create/not-cached");
 
         string_creation!(group, length, |len| { move || random_string(len) });
 
@@ -116,7 +118,7 @@ fn bench_basic_creation(c: &mut Criterion) {
     }
 
     {
-        let mut group = c.benchmark_group(&format!("single-thread/create/mixed"));
+        let mut group = c.benchmark_group("single-thread/create/mixed");
 
         string_creation!(group, length, |len| {
             let text = random_string(len);
@@ -149,11 +151,7 @@ fn bench_hash_operation(c: &mut Criterion) {
     }
 
     fn random_keys<S>(len: usize, convert: &mut dyn FnMut(String) -> S) -> Vec<S> {
-        (0..len)
-            .into_iter()
-            .map(|_| random_string(1024))
-            .map(|s| convert(s))
-            .collect()
+        (0..len).map(|_| random_string(1024)).map(convert).collect()
     }
 
     fn prepare<S>(len: usize, convert: &mut dyn FnMut(String) -> S) -> (FxHashSet<S>, Vec<S>)
@@ -170,7 +168,7 @@ fn bench_hash_operation(c: &mut Criterion) {
         (set, keys)
     }
 
-    let mut group = c.benchmark_group(&format!("single-thread/HashSet"));
+    let mut group = c.benchmark_group("single-thread/HashSet");
 
     let length = [1000, 10000];
 
@@ -183,7 +181,7 @@ fn bench_hash_operation(c: &mut Criterion) {
                     || prepare(len, &mut |s| store.atom(s)),
                     |(map, keys)| {
                         for key in &keys {
-                            black_box(map.contains(&key));
+                            black_box(map.contains(key));
                         }
                         for_fairness.extend(map);
                         for_fairness.extend(keys);
