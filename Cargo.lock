@@ -331,6 +331,7 @@ dependencies = [
  "compact_str",
  "criterion",
  "dashmap",
+ "dudy-malloc",
  "kstring",
  "num_cpus",
  "once_cell",
@@ -342,7 +343,6 @@ dependencies = [
  "smartstring",
  "smol_str",
  "string_cache",
- "swc_node_base",
  "triomphe",
 ]
 
@@ -784,16 +784,6 @@ dependencies = [
  "phf_shared 0.10.0",
  "precomputed-hash",
  "serde",
-]
-
-[[package]]
-name = "swc_node_base"
-version = "0.5.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6065892f97ac3f42280d0f3eadc351aeff552e8de4d459604bcd9c56eb799ade"
-dependencies = [
- "mimalloc-rust",
- "tikv-jemallocator",
 ]
 
 [[package]]
