@@ -6,12 +6,11 @@ inputs:
     required: false
     default: "18"
 
-shell: bash
-
 runs:
   using: "composite"
   steps:
     - name: Install Node.js
+      shell: bash
       uses: actions/setup-node@v3
       with:
         node-version: 18
@@ -35,4 +34,5 @@ runs:
           ${{ runner.os }}-pnpm-store-
 
     - name: Install dependencies
+      shell: bash
       run: pnpm install
