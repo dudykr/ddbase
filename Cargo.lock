@@ -290,6 +290,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d77f7ec81a6d05a3abb01ab6eb7590f6083d08449fe5a1c8b1e620283546ccb7"
 
 [[package]]
+name = "hstr"
+version = "0.1.1"
+dependencies = [
+ "compact_str",
+ "criterion",
+ "dashmap",
+ "dudy-malloc",
+ "kstring",
+ "num_cpus",
+ "once_cell",
+ "phf",
+ "rand",
+ "rayon",
+ "rustc-hash",
+ "smallvec",
+ "smartstring",
+ "smol_str",
+ "string_cache",
+ "triomphe",
+]
+
+[[package]]
 name = "is-terminal"
 version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -322,28 +344,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c5f195fe497f702db0f318b07fdd68edb16955aed830df8363d837542f8f935a"
 dependencies = [
  "wasm-bindgen",
-]
-
-[[package]]
-name = "kdy-str"
-version = "0.1.0"
-dependencies = [
- "compact_str",
- "criterion",
- "dashmap",
- "dudy-malloc",
- "kstring",
- "num_cpus",
- "once_cell",
- "phf",
- "rand",
- "rayon",
- "rustc-hash",
- "smallvec",
- "smartstring",
- "smol_str",
- "string_cache",
- "triomphe",
 ]
 
 [[package]]
