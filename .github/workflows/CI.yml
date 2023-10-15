@@ -48,8 +48,6 @@ jobs:
   cargo-deny:
     name: Check license of dependencies
     runs-on: ubuntu-latest
-    if: >-
-      ${{ !contains(github.event.head_commit.message, 'chore: ') }}
     steps:
       - uses: actions/checkout@v3
 
@@ -71,8 +69,6 @@ jobs:
   cargo-check:
     name: Check
     runs-on: ${{ matrix.os }}
-    if: >-
-      ${{ !contains(github.event.head_commit.message, 'chore: ') }}
     strategy:
       fail-fast: false
       matrix:
@@ -111,8 +107,6 @@ jobs:
   cargo-test:
     name: Cargo test
     runs-on: ubuntu-latest
-    if: >-
-      ${{ !contains(github.event.head_commit.message, 'chore: ') }}
     steps:
       - name: Handle line endings
         shell: bash
