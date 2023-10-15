@@ -127,7 +127,7 @@ impl Storage for &'_ mut AtomStore {
 
             entries
                 .iter()
-                .find(|entry| entry.hash == hash && &*entry.string == text)
+                .find(|entry| entry.hash == hash && *entry.string == text)
                 .cloned()
         });
 

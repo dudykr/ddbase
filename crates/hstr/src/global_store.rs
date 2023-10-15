@@ -27,7 +27,7 @@ impl Storage for &'_ GlobalData {
         let existing = entries.iter().find_map(|entry| {
             let entry = entry.upgrade()?;
 
-            if entry.hash == hash && &*entry.string == text {
+            if entry.hash == hash && *entry.string == text {
                 Some(entry)
             } else {
                 None
@@ -53,7 +53,7 @@ impl Storage for &'_ GlobalData {
 }
 
 fn atom(text: Cow<str>) -> Atom {
-    static GLOBAL_DATA: Lazy<GlobalData> = Lazy::new(|| Default::default());
+    static GLOBAL_DATA: Lazy<GlobalData> = Lazy::new(Default::default);
 
     new_atom(&*GLOBAL_DATA, text)
 }

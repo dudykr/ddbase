@@ -257,14 +257,13 @@ fn bench_hash_operation(c: &mut Criterion) {
 
 fn bench_parallel_creation(c: &mut Criterion) {
     {
-        let mut group = c.benchmark_group(&format!("parallel/create"));
+        let mut group = c.benchmark_group("parallel/create");
 
         for len in [64, 256, 1024] {
             group.bench_with_input(BenchmarkId::new("kdy_str", len), &len, |b, _| {
                 b.iter_batched(
                     || {
                         (0..num_cpus::get())
-                            .into_iter()
                             .map(|_| kdy_str::AtomStore::default())
                             .collect::<Vec<_>>()
                     },
@@ -275,7 +274,6 @@ fn bench_parallel_creation(c: &mut Criterion) {
                             .into_par_iter()
                             .map(|mut store| {
                                 let atoms = (0..len)
-                                    .into_iter()
                                     .map(|_| store.atom(random_string(65)))
                                     .collect::<Vec<_>>();
 
@@ -301,7 +299,6 @@ fn bench_parallel_creation(c: &mut Criterion) {
                             .into_par_iter()
                             .map(|_| {
                                 (0..len)
-                                    .into_iter()
                                     .map(|_| {
                                         black_box(string_cache::DefaultAtom::from(random_string(
                                             65,
