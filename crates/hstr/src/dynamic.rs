@@ -101,10 +101,8 @@ where
     let entry = storage.insert_entry(text, hash);
     eprintln!("Interning `{}:{:p}`", entry.string, &*entry);
 
-    let ptr = Arc::as_ptr(&entry);
+    let ptr = Arc::into_raw(entry);
     let data = ptr as u64;
-
-    forget(entry);
 
     // debug_assert!(0 == data & TAG_MASK);
     Atom {
