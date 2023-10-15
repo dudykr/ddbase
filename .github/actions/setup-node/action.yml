@@ -6,6 +6,8 @@ inputs:
     required: false
     default: "18"
 
+shell: bash
+
 runs:
   using: "composite"
   steps:
