@@ -86,20 +86,10 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          # MSRV is current stable for ES crates and nightly for other languages
-          # toolchain: stable
-          # override: true
 
-      - uses: actions/setup-node@v3
-        with:
-          node-version: "18"
+      - name: Setup Node.js
+        uses: ./.github/actions/setup-node
 
-      - name: Install node dependencies
-        shell: bash
-        run: |
-          pnpm i
-
-      # Ensure that all components are compilable.
       - name: Run cargo check for all targets
         run: cargo check --all --all-targets
 
@@ -128,11 +118,8 @@ jobs:
         with:
           profile: minimal
 
-      - name: Install node dependencies
-        shell: bash
-        run: |
-          corepack enable
-          corepack pnpm i
+      - name: Setup Node.js
+        uses: ./.github/actions/setup-node
 
       - name: Configure path (windows)
         shell: bash
