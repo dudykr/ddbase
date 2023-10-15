@@ -121,12 +121,6 @@ jobs:
       - name: Setup Node.js
         uses: ./.github/actions/setup-node
 
-      - name: Configure path (windows)
-        shell: bash
-        if: runner.os == 'Windows'
-        run: |
-          echo $(yarn global bin) >> $GITHUB_PATH
-
       - name: Run cargo test
         run: |
           cargo test --all
