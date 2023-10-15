@@ -32,11 +32,15 @@ mod tests;
 /// ## Fast [Hash] implementation
 ///
 ///
-/// ## Lock-free creation and dropping
+///
+/// ## Lock-free creation
 ///
 /// - Note: This applies if you create atoms via [AtomStore]. If you create
 ///   atoms via global APIs, this does not apply.
 ///
+/// ## Lock-free drop
+///
+/// [Drop] does not lock any mutex.
 ///
 /// ## Small size (One `u64`)
 ///
