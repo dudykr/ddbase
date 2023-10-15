@@ -168,8 +168,7 @@ impl Drop for Atom {
     #[inline]
     fn drop(&mut self) {
         if self.is_dynamic() {
-            let ptr = Entry::cast(self.unsafe_data);
-            unsafe { drop_slow(Arc::from_raw(ptr)) }
+            unsafe { drop_slow(Entry::restore_arc(self.unsafe_data)) }
         }
 
         #[cold]
@@ -192,9 +191,8 @@ impl Clone for Atom {
 impl Atom {
     pub(crate) fn from_alias(alias: NonZeroU64) -> Self {
         if alias.get() & 1 == 1 {
-            let ptr = Entry::cast(alias);
             unsafe {
-                let arc = Arc::from_raw(ptr);
+                let arc = Entry::restore_arc(alias);
                 forget(no_inline_clone(&arc));
                 forget(arc);
             }

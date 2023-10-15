@@ -30,6 +30,11 @@ impl Entry {
     pub fn cast(v: NonZeroU64) -> *const Entry {
         v.get() as *const Entry
     }
+
+    pub unsafe fn restore_arc(v: NonZeroU64) -> Arc<Entry> {
+        let ptr = Self::cast(v);
+        Arc::from_raw(ptr)
+    }
 }
 
 /// A store that stores [Atom]s. Can be merged with other [AtomStore]s for
