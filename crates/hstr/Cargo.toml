@@ -1,0 +1,12 @@
+[package]
+name = "hstr"
+version = "0.1.0"
+edition = "2021"
+authors = ["강동윤 <kdy1997.dev@gmail.com>"]
+description = "Fast string type for hashmap"
+license = "Apache-2.0"
+repository = "https://github.com/dudykr/ddbase.git"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
