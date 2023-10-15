@@ -11,6 +11,9 @@
     "prettier": "^3.0.3"
   },
   "lint-staged": {
+    "*.rs": [
+      "rustfmt --"
+    ],
     "*": [
       "prettier --write --ignore-unknown"
     ]
