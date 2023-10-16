@@ -14,7 +14,7 @@ use std::{
 use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
 
-use crate::Atom;
+use crate::{Atom, INLINE_TAG, MAX_INLINE_LEN, TAG_MASK};
 
 #[derive(Debug)]
 pub(crate) struct Entry {
@@ -75,16 +75,32 @@ impl AtomStore {
     }
 }
 
+/// This can create any kind of [Atom], although this lives in the `dynamic`
+/// module.
 pub(crate) fn new_atom<S>(storage: S, text: Cow<str>) -> Atom
 where
     S: Storage,
 {
+    let len = text.len();
+
+    if len < MAX_INLINE_LEN {
+        let mut data: u64 = (INLINE_TAG as u64) | ((len as u64) << LEN_OFFSET);
+        {
+            let dest = inline_atom_slice_mut(&mut data);
+            dest[..len].copy_from_slice(text.as_bytes())
+        }
+        return Atom {
+            // INLINE_TAG ensures this is never zero
+            unsafe_data: unsafe { NonZeroU64::new_unchecked(data) },
+        };
+    }
+
     let hash = calc_hash(&text);
     let entry = storage.insert_entry(text, hash);
 
     let ptr = Arc::into_raw(entry) as *mut Entry;
 
-    // debug_assert!(0 == data & TAG_MASK);
+    debug_assert!(0 == ptr as u64 & TAG_MASK);
     Atom {
         unsafe_data: unsafe { NonNull::new_unchecked(ptr) },
     }
