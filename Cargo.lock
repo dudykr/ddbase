@@ -298,6 +298,7 @@ dependencies = [
  "dashmap",
  "dudy-malloc",
  "kstring",
+ "new_debug_unreachable",
  "num_cpus",
  "once_cell",
  "phf",
