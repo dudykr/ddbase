@@ -75,12 +75,7 @@ impl AtomStore {
 
     #[inline(always)]
     pub fn atom<'a>(&mut self, text: impl Into<Cow<'a, str>>) -> Atom {
-        self.atom_inner(text.into())
-    }
-
-    #[inline(never)]
-    fn atom_inner(&mut self, text: Cow<str>) -> Atom {
-        new_atom(self, text)
+        new_atom(self, text.into())
     }
 }
 
