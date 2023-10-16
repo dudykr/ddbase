@@ -2,10 +2,7 @@ use std::{
     borrow::Cow,
     hash::BuildHasherDefault,
     ptr::null_mut,
-    sync::{
-        atomic::{AtomicPtr, AtomicU64},
-        Arc, Weak,
-    },
+    sync::{atomic::AtomicPtr, Arc, Weak},
 };
 
 use dashmap::DashMap;

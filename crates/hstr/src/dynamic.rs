@@ -4,10 +4,10 @@ use std::{
     fmt::Debug,
     hash::{Hash, Hasher},
     mem::forget,
-    num::{NonZeroU32, NonZeroU64},
+    num::NonZeroU32,
     ptr::{null_mut, NonNull},
     sync::{
-        atomic::{AtomicPtr, AtomicU32, AtomicU64, Ordering::SeqCst},
+        atomic::{AtomicPtr, AtomicU32, Ordering::SeqCst},
         Arc,
     },
 };
@@ -28,10 +28,6 @@ pub(crate) struct Entry {
 }
 
 impl Entry {
-    pub fn cast(v: NonZeroU64) -> *const Entry {
-        v.get() as *const Entry
-    }
-
     pub unsafe fn restore_arc(v: NonNull<Entry>) -> Arc<Entry> {
         let ptr = v.as_ptr();
         Arc::from_raw(ptr)

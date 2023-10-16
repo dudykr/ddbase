@@ -4,7 +4,6 @@ use std::{
     fmt::{Debug, Display},
     hash::Hash,
     mem::forget,
-    num::NonZeroU64,
     ops::Deref,
     ptr::NonNull,
     sync::{atomic::Ordering::SeqCst, Arc},
