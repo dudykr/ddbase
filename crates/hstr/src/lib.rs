@@ -182,9 +182,6 @@ impl Drop for Atom {
         #[cold]
         #[inline(never)]
         fn drop_slow(arc: Arc<Entry>) {
-            if Arc::strong_count(&arc) == 1 {
-                eprintln!("Dropping `{}:{:p}`", arc.string, &*arc);
-            }
             drop(arc);
         }
     }
@@ -201,7 +198,6 @@ impl Atom {
         if true {
             unsafe {
                 let arc = Entry::restore_arc(alias);
-                forget(no_inline_clone(&arc));
                 forget(arc);
             }
         }
