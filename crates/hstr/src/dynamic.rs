@@ -5,8 +5,9 @@ use std::{
     hash::{Hash, Hasher},
     mem::forget,
     num::{NonZeroU32, NonZeroU64},
+    ptr::{null_mut, NonNull},
     sync::{
-        atomic::{AtomicU32, AtomicU64, Ordering::SeqCst},
+        atomic::{AtomicPtr, AtomicU32, AtomicU64, Ordering::SeqCst},
         Arc,
     },
 };
@@ -23,7 +24,7 @@ pub(crate) struct Entry {
     /// store id
     pub store_id: Option<NonZeroU32>,
 
-    pub alias: AtomicU64,
+    pub alias: AtomicPtr<Entry>,
 }
 
 impl Entry {
@@ -31,8 +32,8 @@ impl Entry {
         v.get() as *const Entry
     }
 
-    pub unsafe fn restore_arc(v: NonZeroU64) -> Arc<Entry> {
-        let ptr = Self::cast(v);
+    pub unsafe fn restore_arc(v: NonNull<Entry>) -> Arc<Entry> {
+        let ptr = v.as_ptr();
         Arc::from_raw(ptr)
     }
 }
@@ -66,11 +67,9 @@ impl AtomStore {
             for entry in entries {
                 let cur_entry = self.insert_entry(Cow::Borrowed(&entry.string), entry.hash);
 
-                let ptr = Arc::as_ptr(&cur_entry);
+                let ptr = Arc::as_ptr(&cur_entry) as *mut Entry;
 
-                let unsafe_data = ptr as u64;
-
-                entry.alias.store(unsafe_data, SeqCst);
+                entry.alias.store(ptr, SeqCst);
 
                 // Don't drop the entry
                 forget(entry.clone());
@@ -96,15 +95,11 @@ where
     let hash = calc_hash(&text);
     let entry = storage.insert_entry(text, hash);
 
-    let ptr = Arc::into_raw(entry);
-    let data = ptr as u64;
+    let ptr = Arc::into_raw(entry) as *mut Entry;
 
     // debug_assert!(0 == data & TAG_MASK);
     Atom {
-        unsafe_data: unsafe {
-            // Safety: The address of a Arc is non-zero
-            NonZeroU64::new_unchecked(data)
-        },
+        unsafe_data: unsafe { NonNull::new_unchecked(ptr) },
     }
 }
 
@@ -139,7 +134,7 @@ impl Storage for &'_ mut AtomStore {
                         string: text.into_owned().into_boxed_str(),
                         hash,
                         store_id,
-                        alias: AtomicU64::new(0),
+                        alias: AtomicPtr::new(null_mut()),
                     })
                 });
                 let v = no_inline_clone(&e);
