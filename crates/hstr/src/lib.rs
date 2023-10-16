@@ -150,24 +150,27 @@ impl Atom {
             return Some(true);
         }
 
-        let te = unsafe { Entry::deref_from(self.unsafe_data) };
-        let oe = unsafe { Entry::deref_from(other.unsafe_data) };
-
-        if te.hash != oe.hash {
+        if self.get_hash() != other.get_hash() {
             return Some(false);
         }
 
-        // This is slow, but we don't reach here in most cases
+        if self.is_dynamic() {
+            // This is slow, but we don't reach here in most cases
+            let te = unsafe { Entry::deref_from(self.unsafe_data) };
 
-        if let Some(other_alias) = NonZeroU64::new(oe.alias.load(SeqCst)) {
-            if let Some(result) = self.fast_eq(&Atom::from_alias(other_alias)) {
-                return Some(result);
+            if let Some(self_alias) = NonZeroU64::new(te.alias.load(SeqCst)) {
+                if let Some(result) = other.fast_eq(&Atom::from_alias(self_alias)) {
+                    return Some(result);
+                }
             }
         }
 
-        if let Some(self_alias) = NonZeroU64::new(te.alias.load(SeqCst)) {
-            if let Some(result) = other.fast_eq(&Atom::from_alias(self_alias)) {
-                return Some(result);
+        if other.is_dynamic() {
+            let oe = unsafe { Entry::deref_from(other.unsafe_data) };
+            if let Some(other_alias) = NonZeroU64::new(oe.alias.load(SeqCst)) {
+                if let Some(result) = self.fast_eq(&Atom::from_alias(other_alias)) {
+                    return Some(result);
+                }
             }
         }
 
