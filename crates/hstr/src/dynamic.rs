@@ -15,7 +15,7 @@ use std::{
 use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
 
-use crate::{no_inline_clone, Atom};
+use crate::Atom;
 
 #[derive(Debug)]
 pub(crate) struct Entry {
@@ -86,6 +86,7 @@ where
     let hash = calc_hash(&text);
     let entry = storage.insert_entry(text, hash);
 
+    dbg!(Arc::strong_count(&entry));
     let ptr = Arc::into_raw(entry) as *mut Entry;
 
     // debug_assert!(0 == data & TAG_MASK);
@@ -128,7 +129,7 @@ impl Storage for &'_ mut AtomStore {
                         alias: AtomicPtr::new(null_mut()),
                     })
                 });
-                let v = no_inline_clone(&e);
+                let v = e.clone();
 
                 entries.push(e);
 

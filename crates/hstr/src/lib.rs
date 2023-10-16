@@ -182,6 +182,10 @@ impl Drop for Atom {
         #[cold]
         #[inline(never)]
         fn drop_slow(arc: Arc<Entry>) {
+            dbg!(Arc::strong_count(&arc));
+            if Arc::strong_count(&arc) > 12312839 {
+                panic!()
+            }
             drop(arc);
         }
     }
@@ -204,11 +208,6 @@ impl Atom {
 
         Self { unsafe_data: alias }
     }
-}
-
-#[inline(never)]
-fn no_inline_clone<T>(arc: &Arc<T>) -> Arc<T> {
-    arc.clone()
 }
 
 impl Deref for Atom {
