@@ -4,4 +4,4 @@ xtask = "run --package xtask --"
 [build]
 
 rustdocflags = ["--cfg", "docsrs"]
-rustflags    = ["-Zshare-generics=y"]
+#rustflags    = ["-Zshare-generics=y"]

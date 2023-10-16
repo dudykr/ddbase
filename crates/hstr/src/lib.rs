@@ -4,8 +4,8 @@ use std::{
     fmt::{Debug, Display},
     hash::Hash,
     mem::forget,
-    num::NonZeroU64,
     ops::Deref,
+    ptr::NonNull,
     sync::{atomic::Ordering::SeqCst, Arc},
 };
 
@@ -32,11 +32,15 @@ mod tests;
 /// ## Fast [Hash] implementation
 ///
 ///
-/// ## Lock-free creation and dropping
+///
+/// ## Lock-free creation
 ///
 /// - Note: This applies if you create atoms via [AtomStore]. If you create
 ///   atoms via global APIs, this does not apply.
 ///
+/// ## Lock-free drop
+///
+/// [Drop] does not lock any mutex.
 ///
 /// ## Small size (One `u64`)
 ///
@@ -57,8 +61,11 @@ mod tests;
 
 pub struct Atom {
     // If this Atom is a dynamic one, this is *const Entry
-    unsafe_data: NonZeroU64,
+    unsafe_data: NonNull<Entry>,
 }
+
+unsafe impl Send for Atom {}
+unsafe impl Sync for Atom {}
 
 impl Display for Atom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -80,7 +87,7 @@ impl Atom {
 
     fn get_hash(&self) -> u32 {
         if self.is_dynamic() {
-            unsafe { &*(Entry::cast(self.unsafe_data)) }.hash
+            unsafe { self.unsafe_data.as_ref() }.hash
         } else {
             0
         }
@@ -88,7 +95,7 @@ impl Atom {
 
     #[inline]
     fn as_str(&self) -> &str {
-        unsafe { &*Entry::cast(self.unsafe_data) }.string.as_ref()
+        unsafe { self.unsafe_data.as_ref() }.string.as_ref()
     }
 
     #[inline(never)]
@@ -97,8 +104,8 @@ impl Atom {
             return Some(true);
         }
 
-        let te = unsafe { &*Entry::cast(self.unsafe_data) };
-        let oe = unsafe { &*Entry::cast(other.unsafe_data) };
+        let te = unsafe { self.unsafe_data.as_ref() };
+        let oe = unsafe { other.unsafe_data.as_ref() };
 
         if te.hash != oe.hash {
             return Some(false);
@@ -106,13 +113,13 @@ impl Atom {
 
         // This is slow, but we don't reach here in most cases
 
-        if let Some(other_alias) = NonZeroU64::new(oe.alias.load(SeqCst)) {
+        if let Some(other_alias) = NonNull::new(oe.alias.load(SeqCst)) {
             if let Some(result) = self.fast_eq(&Atom::from_alias(other_alias)) {
                 return Some(result);
             }
         }
 
-        if let Some(self_alias) = NonZeroU64::new(te.alias.load(SeqCst)) {
+        if let Some(self_alias) = NonNull::new(te.alias.load(SeqCst)) {
             if let Some(result) = other.fast_eq(&Atom::from_alias(self_alias)) {
                 return Some(result);
             }
@@ -129,8 +136,8 @@ impl PartialEq for Atom {
             return result;
         }
 
-        let te = unsafe { &*Entry::cast(self.unsafe_data) };
-        let oe = unsafe { &*Entry::cast(other.unsafe_data) };
+        let te = unsafe { self.unsafe_data.as_ref() };
+        let oe = unsafe { other.unsafe_data.as_ref() };
 
         // If the store is the same, the same string has same `unsafe_data``
         match (&te.store_id, &oe.store_id) {
@@ -164,13 +171,15 @@ impl Drop for Atom {
     #[inline]
     fn drop(&mut self) {
         if self.is_dynamic() {
-            let ptr = Entry::cast(self.unsafe_data);
-            unsafe { drop_slow(Arc::from_raw(ptr)) }
+            unsafe { drop_slow(Entry::restore_arc(self.unsafe_data)) }
         }
 
         #[cold]
         #[inline(never)]
         fn drop_slow(arc: Arc<Entry>) {
+            if Arc::strong_count(&arc) == 1 {
+                eprintln!("Dropping `{}:{:p}`", arc.string, &*arc);
+            }
             drop(arc);
         }
     }
@@ -178,27 +187,15 @@ impl Drop for Atom {
 
 impl Clone for Atom {
     fn clone(&self) -> Self {
-        if self.is_dynamic() {
-            let ptr = Entry::cast(self.unsafe_data);
-            unsafe {
-                let arc = Arc::from_raw(ptr);
-                forget(no_inline_clone(&arc));
-                forget(arc);
-            }
-        }
-
-        Self {
-            unsafe_data: self.unsafe_data,
-        }
+        Self::from_alias(self.unsafe_data)
     }
 }
 
 impl Atom {
-    pub(crate) fn from_alias(alias: NonZeroU64) -> Self {
-        if alias.get() & 1 == 1 {
-            let ptr = Entry::cast(alias);
+    pub(crate) fn from_alias(alias: NonNull<Entry>) -> Self {
+        if true {
             unsafe {
-                let arc = Arc::from_raw(ptr);
+                let arc = Entry::restore_arc(alias);
                 forget(no_inline_clone(&arc));
                 forget(arc);
             }
