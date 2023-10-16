@@ -4,10 +4,13 @@ use std::{
     fmt::{Debug, Display},
     hash::Hash,
     mem::forget,
+    num::NonZeroU64,
     ops::Deref,
-    ptr::NonNull,
+    slice,
     sync::{atomic::Ordering::SeqCst, Arc},
 };
+
+use debug_unreachable::debug_unreachable;
 
 use crate::dynamic::Entry;
 pub use crate::{dynamic::AtomStore, global_store::*};
@@ -61,7 +64,7 @@ mod tests;
 
 pub struct Atom {
     // If this Atom is a dynamic one, this is *const Entry
-    unsafe_data: NonNull<Entry>,
+    unsafe_data: NonZeroU64,
 }
 
 /// Immutable, so it's safe to be shared between threads
@@ -84,23 +87,61 @@ impl Debug for Atom {
     }
 }
 
+const DYNAMIC_TAG: u8 = 0b_00;
+const INLINE_TAG: u8 = 0b_01; // len in upper nybble
+const STATIC_TAG: u8 = 0b_10;
+const TAG_MASK: u64 = 0b_11;
+const LEN_OFFSET: u64 = 4;
+const LEN_MASK: u64 = 0xf0;
+
+const MAX_INLINE_LEN: usize = 7;
+// const STATIC_SHIFT_BITS: usize = 32;
+
 impl Atom {
     #[inline]
-    fn is_dynamic(&self) -> bool {
-        true
+    fn tag(&self) -> u8 {
+        (self.unsafe_data.get() & TAG_MASK) as u8
     }
 
+    /// Return true if this is a dynamic Atom.
+    #[inline]
+    fn is_dynamic(&self) -> bool {
+        self.tag() == DYNAMIC_TAG
+    }
+}
+
+impl Atom {
     fn get_hash(&self) -> u32 {
-        if self.is_dynamic() {
-            unsafe { self.unsafe_data.as_ref() }.hash
-        } else {
-            0
+        match self.tag() {
+            DYNAMIC_TAG => unsafe { Entry::deref_from(self.unsafe_data) }.hash,
+            STATIC_TAG => {
+                todo!("static hash")
+            }
+            INLINE_TAG => {
+                let data = self.unsafe_data.get();
+                // This may or may not be great...
+                ((data >> 32) ^ data) as u32
+            }
+            _ => unsafe { debug_unreachable!() },
         }
     }
 
     #[inline]
     fn as_str(&self) -> &str {
-        unsafe { self.unsafe_data.as_ref() }.string.as_ref()
+        match self.tag() {
+            DYNAMIC_TAG => unsafe { Entry::deref_from(self.unsafe_data) }
+                .string
+                .as_ref(),
+            STATIC_TAG => {
+                todo!("static as_str")
+            }
+            INLINE_TAG => {
+                let len = (self.unsafe_data.get() & LEN_MASK) >> LEN_OFFSET;
+                let src = inline_atom_slice(&self.unsafe_data);
+                unsafe { std::str::from_utf8_unchecked(&src[..(len as usize)]) }
+            }
+            _ => unsafe { debug_unreachable!() },
+        }
     }
 
     #[inline(never)]
@@ -109,24 +150,27 @@ impl Atom {
             return Some(true);
         }
 
-        let te = unsafe { self.unsafe_data.as_ref() };
-        let oe = unsafe { other.unsafe_data.as_ref() };
-
-        if te.hash != oe.hash {
+        if self.get_hash() != other.get_hash() {
             return Some(false);
         }
 
-        // This is slow, but we don't reach here in most cases
+        if self.is_dynamic() {
+            // This is slow, but we don't reach here in most cases
+            let te = unsafe { Entry::deref_from(self.unsafe_data) };
 
-        if let Some(other_alias) = NonNull::new(oe.alias.load(SeqCst)) {
-            if let Some(result) = self.fast_eq(&Atom::from_alias(other_alias)) {
-                return Some(result);
+            if let Some(self_alias) = NonZeroU64::new(te.alias.load(SeqCst)) {
+                if let Some(result) = other.fast_eq(&Atom::from_alias(self_alias)) {
+                    return Some(result);
+                }
             }
         }
 
-        if let Some(self_alias) = NonNull::new(te.alias.load(SeqCst)) {
-            if let Some(result) = other.fast_eq(&Atom::from_alias(self_alias)) {
-                return Some(result);
+        if other.is_dynamic() {
+            let oe = unsafe { Entry::deref_from(other.unsafe_data) };
+            if let Some(other_alias) = NonZeroU64::new(oe.alias.load(SeqCst)) {
+                if let Some(result) = self.fast_eq(&Atom::from_alias(other_alias)) {
+                    return Some(result);
+                }
             }
         }
 
@@ -141,25 +185,27 @@ impl PartialEq for Atom {
             return result;
         }
 
-        let te = unsafe { self.unsafe_data.as_ref() };
-        let oe = unsafe { other.unsafe_data.as_ref() };
+        if self.is_dynamic() {
+            let te = unsafe { Entry::deref_from(self.unsafe_data) };
+            let oe = unsafe { Entry::deref_from(other.unsafe_data) };
 
-        // If the store is the same, the same string has same `unsafe_data``
-        match (&te.store_id, &oe.store_id) {
-            (Some(this_store), Some(other_store)) => {
-                if this_store == other_store {
+            // If the store is the same, the same string has same `unsafe_data``
+            match (&te.store_id, &oe.store_id) {
+                (Some(this_store), Some(other_store)) => {
+                    if this_store == other_store {
+                        return false;
+                    }
+                }
+                (None, None) => {
                     return false;
                 }
+                _ => {}
             }
-            (None, None) => {
-                return false;
-            }
-            _ => {}
         }
 
         // If the store is different, the string may be the same, even though the
         // `unsafe_data` is different
-        te.string == oe.string
+        self.as_str() == other.as_str()
     }
 }
 
@@ -194,8 +240,8 @@ impl Clone for Atom {
 }
 
 impl Atom {
-    pub(crate) fn from_alias(alias: NonNull<Entry>) -> Self {
-        if true {
+    pub(crate) fn from_alias(alias: NonZeroU64) -> Self {
+        if (alias.get() & TAG_MASK) as u8 == DYNAMIC_TAG {
             unsafe {
                 let arc = Entry::restore_arc(alias);
                 forget(arc.clone());
@@ -213,5 +259,49 @@ impl Deref for Atom {
     #[inline]
     fn deref(&self) -> &Self::Target {
         self.as_str()
+    }
+}
+
+impl AsRef<str> for Atom {
+    #[inline]
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl PartialEq<str> for Atom {
+    #[inline]
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+#[inline(always)]
+fn inline_atom_slice(x: &NonZeroU64) -> &[u8] {
+    unsafe {
+        let x: *const NonZeroU64 = x;
+        let mut data = x as *const u8;
+        // All except the lowest byte, which is first in little-endian, last in
+        // big-endian.
+        if cfg!(target_endian = "little") {
+            data = data.offset(1);
+        }
+        let len = 7;
+        slice::from_raw_parts(data, len)
+    }
+}
+
+#[inline(always)]
+fn inline_atom_slice_mut(x: &mut u64) -> &mut [u8] {
+    unsafe {
+        let x: *mut u64 = x;
+        let mut data = x as *mut u8;
+        // All except the lowest byte, which is first in little-endian, last in
+        // big-endian.
+        if cfg!(target_endian = "little") {
+            data = data.offset(1);
+        }
+        let len = 7;
+        slice::from_raw_parts_mut(data, len)
     }
 }

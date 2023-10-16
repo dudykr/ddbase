@@ -1,8 +1,7 @@
 use std::{
     borrow::Cow,
     hash::BuildHasherDefault,
-    ptr::null_mut,
-    sync::{atomic::AtomicPtr, Arc, Weak},
+    sync::{Arc, Weak},
 };
 
 use dashmap::DashMap;
@@ -42,7 +41,7 @@ impl Storage for &'_ GlobalData {
                     string: text.into_owned().into_boxed_str(),
                     hash,
                     store_id: None,
-                    alias: AtomicPtr::new(null_mut()),
+                    alias: Default::default(),
                 });
 
                 entries.push(Arc::downgrade(&e));

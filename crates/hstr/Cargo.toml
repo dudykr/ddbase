@@ -1,6 +1,6 @@
 [package]
 name = "hstr"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 authors = ["강동윤 <kdy1997.dev@gmail.com>"]
 description = "A string type which is optimized for hash operations."
@@ -17,6 +17,7 @@ harness = false
 
 [dependencies]
 dashmap = "5.5.3"
+new_debug_unreachable = "1.0.4"
 once_cell = "1.18.0"
 phf = "0.11.2"
 rustc-hash = "1.1.0"
