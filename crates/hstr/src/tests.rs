@@ -134,15 +134,3 @@ fn store_merge_many_1() {
     assert_eq!(a2, a4);
     assert_ne!(a3, a4);
 }
-
-#[test]
-fn store_merge_many_2() {}
-
-#[test]
-fn store_merge_many_3() {}
-
-#[test]
-fn store_merge_many_4() {}
-
-#[test]
-fn store_merge_many_5() {}
