@@ -9,6 +9,8 @@ use std::{
     sync::{atomic::Ordering::SeqCst, Arc},
 };
 
+use debug_unreachable::debug_unreachable;
+
 use crate::dynamic::Entry;
 pub use crate::{dynamic::AtomStore, global_store::*};
 
@@ -84,17 +86,57 @@ impl Debug for Atom {
     }
 }
 
+const DYNAMIC_TAG: u8 = 0b_00;
+const INLINE_TAG: u8 = 0b_01; // len in upper nybble
+const STATIC_TAG: u8 = 0b_10;
+const TAG_MASK: u64 = 0b_11;
+const LEN_OFFSET: u64 = 4;
+const LEN_MASK: u64 = 0xf0;
+
+const MAX_INLINE_LEN: usize = 7;
+const STATIC_SHIFT_BITS: usize = 32;
+
 impl Atom {
     #[inline]
-    fn is_dynamic(&self) -> bool {
-        true
+    fn get_data_as_u64(&self) -> u64 {
+        self.unsafe_data.as_ptr() as u64
     }
 
+    #[inline]
+    fn tag(&self) -> u8 {
+        (self.get_data_as_u64() & TAG_MASK) as u8
+    }
+
+    /// Return true if this is a static Atom.
+    #[inline]
+    fn is_static(&self) -> bool {
+        self.tag() == STATIC_TAG
+    }
+
+    /// Return true if this is a dynamic Atom.
+    #[inline]
+    fn is_dynamic(&self) -> bool {
+        self.tag() == DYNAMIC_TAG
+    }
+
+    /// Return true if this is an inline Atom.
+    #[inline]
+    fn is_inline(&self) -> bool {
+        self.tag() == INLINE_TAG
+    }
+}
+
+impl Atom {
     fn get_hash(&self) -> u32 {
-        if self.is_dynamic() {
-            unsafe { self.unsafe_data.as_ref() }.hash
-        } else {
-            0
+        match self.tag() {
+            DYNAMIC_TAG => unsafe { self.unsafe_data.as_ref() }.hash,
+            STATIC_TAG => {}
+            INLINE_TAG => {
+                let data = self.unsafe_data.get();
+                // This may or may not be great...
+                ((data >> 32) ^ data) as u32
+            }
+            _ => unsafe { debug_unreachable!() },
         }
     }
 
