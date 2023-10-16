@@ -3,7 +3,7 @@
 use std::{
     fmt::{Debug, Display},
     hash::Hash,
-    mem::forget,
+    mem::{self, forget},
     num::NonZeroU64,
     ops::Deref,
     slice,
@@ -11,6 +11,7 @@ use std::{
 };
 
 use debug_unreachable::debug_unreachable;
+use once_cell::sync::Lazy;
 
 use crate::dynamic::Entry;
 pub use crate::{dynamic::AtomStore, global_store::*};
@@ -67,6 +68,14 @@ pub struct Atom {
     unsafe_data: NonZeroU64,
 }
 
+impl Default for Atom {
+    #[inline(never)]
+    fn default() -> Self {
+        static EMPTY: Lazy<Atom> = Lazy::new(|| Atom::from(""));
+        EMPTY.clone()
+    }
+}
+
 /// Immutable, so it's safe to be shared between threads
 unsafe impl Send for Atom {}
 
@@ -107,6 +116,48 @@ impl Atom {
     #[inline]
     fn is_dynamic(&self) -> bool {
         self.tag() == DYNAMIC_TAG
+    }
+}
+
+impl Atom {
+    fn from_mutated_str<F: FnOnce(&mut str)>(s: &str, f: F) -> Self {
+        let mut buffer = mem::MaybeUninit::<[u8; 64]>::uninit();
+        let buffer = unsafe { &mut *buffer.as_mut_ptr() };
+
+        if let Some(buffer_prefix) = buffer.get_mut(..s.len()) {
+            buffer_prefix.copy_from_slice(s.as_bytes());
+            let as_str = unsafe { ::std::str::from_utf8_unchecked_mut(buffer_prefix) };
+            f(as_str);
+            Atom::from(&*as_str)
+        } else {
+            let mut string = s.to_owned();
+            f(&mut string);
+            Atom::from(string)
+        }
+    }
+
+    /// Like [`to_ascii_uppercase`].
+    ///
+    /// [`to_ascii_uppercase`]: https://doc.rust-lang.org/std/ascii/trait.AsciiExt.html#tymethod.to_ascii_uppercase
+    pub fn to_ascii_uppercase(&self) -> Self {
+        for (i, b) in self.bytes().enumerate() {
+            if let b'a'..=b'z' = b {
+                return Atom::from_mutated_str(self, |s| s[i..].make_ascii_uppercase());
+            }
+        }
+        self.clone()
+    }
+
+    /// Like [`to_ascii_lowercase`].
+    ///
+    /// [`to_ascii_lowercase`]: https://doc.rust-lang.org/std/ascii/trait.AsciiExt.html#tymethod.to_ascii_lowercase
+    pub fn to_ascii_lowercase(&self) -> Self {
+        for (i, b) in self.bytes().enumerate() {
+            if let b'A'..=b'Z' = b {
+                return Atom::from_mutated_str(self, |s| s[i..].make_ascii_lowercase());
+            }
+        }
+        self.clone()
     }
 }
 
