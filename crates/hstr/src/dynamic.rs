@@ -66,9 +66,6 @@ impl AtomStore {
                 let ptr = Arc::as_ptr(&cur_entry) as *mut Entry;
 
                 entry.alias.store(ptr, SeqCst);
-
-                // Don't drop the entry
-                forget(entry.clone());
             }
         }
     }
@@ -86,7 +83,6 @@ where
     let hash = calc_hash(&text);
     let entry = storage.insert_entry(text, hash);
 
-    dbg!(Arc::strong_count(&entry));
     let ptr = Arc::into_raw(entry) as *mut Entry;
 
     // debug_assert!(0 == data & TAG_MASK);
@@ -119,11 +115,7 @@ impl Storage for &'_ mut AtomStore {
         });
 
         match existing {
-            Some(existing) => {
-                dbg!(Arc::strong_count(&existing));
-
-                existing
-            }
+            Some(existing) => existing,
             None => {
                 let e = no_inline_wrap(|| {
                     Arc::new(Entry {
@@ -136,8 +128,6 @@ impl Storage for &'_ mut AtomStore {
                 let new = e.clone();
 
                 entries.push(e);
-
-                dbg!(Arc::strong_count(&new));
 
                 new
             }

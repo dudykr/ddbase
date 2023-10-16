@@ -182,7 +182,6 @@ impl Drop for Atom {
         #[cold]
         #[inline(never)]
         fn drop_slow(arc: Arc<Entry>) {
-            dbg!(Arc::strong_count(&arc));
             drop(arc);
         }
     }
