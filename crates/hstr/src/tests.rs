@@ -10,7 +10,9 @@ fn store_with_atoms(texts: Vec<&str>) -> (AtomStore, Vec<Atom>) {
 
 #[test]
 fn simple_usage() {
-    let (_s, atoms) = store_with_atoms(vec!["Hello, world!", "Hello, world!"]);
+    let (s, atoms) = store_with_atoms(vec!["Hello, world!", "Hello, world!"]);
+
+    drop(s);
 
     let a1 = atoms[0].clone();
 
@@ -134,15 +136,3 @@ fn store_merge_many_1() {
     assert_eq!(a2, a4);
     assert_ne!(a3, a4);
 }
-
-#[test]
-fn store_merge_many_2() {}
-
-#[test]
-fn store_merge_many_3() {}
-
-#[test]
-fn store_merge_many_4() {}
-
-#[test]
-fn store_merge_many_5() {}

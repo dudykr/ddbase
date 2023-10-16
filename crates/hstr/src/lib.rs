@@ -64,18 +64,23 @@ pub struct Atom {
     unsafe_data: NonNull<Entry>,
 }
 
+/// Immutable, so it's safe to be shared between threads
 unsafe impl Send for Atom {}
+
+/// Immutable, so it's safe to be shared between threads
 unsafe impl Sync for Atom {}
 
 impl Display for Atom {
+    #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.as_str(), f)
+        Display::fmt(self.as_str(), f)
     }
 }
 
 impl Debug for Atom {
+    #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(&self.as_str(), f)
+        Debug::fmt(self.as_str(), f)
     }
 }
 
@@ -177,9 +182,6 @@ impl Drop for Atom {
         #[cold]
         #[inline(never)]
         fn drop_slow(arc: Arc<Entry>) {
-            if Arc::strong_count(&arc) == 1 {
-                eprintln!("Dropping `{}:{:p}`", arc.string, &*arc);
-            }
             drop(arc);
         }
     }
@@ -196,18 +198,13 @@ impl Atom {
         if true {
             unsafe {
                 let arc = Entry::restore_arc(alias);
-                forget(no_inline_clone(&arc));
+                forget(arc.clone());
                 forget(arc);
             }
         }
 
         Self { unsafe_data: alias }
     }
-}
-
-#[inline(never)]
-fn no_inline_clone<T>(arc: &Arc<T>) -> Arc<T> {
-    arc.clone()
 }
 
 impl Deref for Atom {

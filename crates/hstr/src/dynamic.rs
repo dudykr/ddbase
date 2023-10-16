@@ -3,7 +3,6 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     hash::{Hash, Hasher},
-    mem::forget,
     num::NonZeroU32,
     ptr::{null_mut, NonNull},
     sync::{
@@ -15,7 +14,7 @@ use std::{
 use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
 
-use crate::{no_inline_clone, Atom};
+use crate::Atom;
 
 #[derive(Debug)]
 pub(crate) struct Entry {
@@ -66,21 +65,13 @@ impl AtomStore {
                 let ptr = Arc::as_ptr(&cur_entry) as *mut Entry;
 
                 entry.alias.store(ptr, SeqCst);
-
-                // Don't drop the entry
-                forget(entry.clone());
             }
         }
     }
 
     #[inline(always)]
     pub fn atom<'a>(&mut self, text: impl Into<Cow<'a, str>>) -> Atom {
-        self.atom_inner(text.into())
-    }
-
-    #[inline(never)]
-    fn atom_inner(&mut self, text: Cow<str>) -> Atom {
-        new_atom(self, text)
+        new_atom(self, text.into())
     }
 }
 
@@ -123,7 +114,7 @@ impl Storage for &'_ mut AtomStore {
         });
 
         match existing {
-            Some(e) => e,
+            Some(existing) => existing,
             None => {
                 let e = no_inline_wrap(|| {
                     Arc::new(Entry {
@@ -133,11 +124,11 @@ impl Storage for &'_ mut AtomStore {
                         alias: AtomicPtr::new(null_mut()),
                     })
                 });
-                let v = no_inline_clone(&e);
+                let new = e.clone();
 
                 entries.push(e);
 
-                v
+                new
             }
         }
     }
