@@ -292,7 +292,7 @@ fn bench_parallel_creation(c: &mut Criterion) {
                 b.iter_batched(
                     || {},
                     |_| {
-                        let mut main_store = vec![];
+                        let mut main_store = FxHashSet::default();
                         (0..num_cpus::get())
                             .into_par_iter()
                             .map(|_| {
