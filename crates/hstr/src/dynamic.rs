@@ -3,10 +3,10 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     hash::{Hash, Hasher},
-    num::NonZeroU32,
-    ptr::{null_mut, NonNull},
+    num::{NonZeroU32, NonZeroU64},
+    ptr::NonNull,
     sync::{
-        atomic::{AtomicPtr, AtomicU32, Ordering::SeqCst},
+        atomic::{AtomicU32, AtomicU64, Ordering::SeqCst},
         Arc,
     },
 };
@@ -14,7 +14,7 @@ use std::{
 use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
 
-use crate::{Atom, INLINE_TAG, MAX_INLINE_LEN, TAG_MASK};
+use crate::{Atom, INLINE_TAG, LEN_OFFSET, MAX_INLINE_LEN, TAG_MASK};
 
 #[derive(Debug)]
 pub(crate) struct Entry {
@@ -23,12 +23,20 @@ pub(crate) struct Entry {
     /// store id
     pub store_id: Option<NonZeroU32>,
 
-    pub alias: AtomicPtr<Entry>,
+    pub alias: AtomicU64,
 }
 
 impl Entry {
-    pub unsafe fn restore_arc(v: NonNull<Entry>) -> Arc<Entry> {
-        let ptr = v.as_ptr();
+    pub unsafe fn cast(ptr: NonZeroU64) -> *const Entry {
+        ptr.get() as *const Entry
+    }
+
+    pub unsafe fn deref_from<'i>(ptr: NonZeroU64) -> &'i Entry {
+        &*Self::cast(ptr)
+    }
+
+    pub unsafe fn restore_arc(v: NonZeroU64) -> Arc<Entry> {
+        let ptr = v.get() as *const Entry;
         Arc::from_raw(ptr)
     }
 }
@@ -62,9 +70,9 @@ impl AtomStore {
             for entry in entries {
                 let cur_entry = self.insert_entry(Cow::Borrowed(&entry.string), entry.hash);
 
-                let ptr = Arc::as_ptr(&cur_entry) as *mut Entry;
+                let ptr = unsafe { NonNull::new_unchecked(Arc::as_ptr(&cur_entry) as *mut Entry) };
 
-                entry.alias.store(ptr, SeqCst);
+                entry.alias.store(ptr.as_ptr() as u64, SeqCst);
             }
         }
     }
@@ -97,12 +105,17 @@ where
 
     let hash = calc_hash(&text);
     let entry = storage.insert_entry(text, hash);
+    let entry = Arc::into_raw(entry);
 
-    let ptr = Arc::into_raw(entry) as *mut Entry;
+    let ptr: NonNull<Entry> = unsafe {
+        // Safety: Arc::into_raw returns a non-null pointer
+        NonNull::new_unchecked(entry as *mut Entry)
+    };
+    let data = ptr.as_ptr() as u64;
 
-    debug_assert!(0 == ptr as u64 & TAG_MASK);
+    debug_assert!(0 == data & TAG_MASK);
     Atom {
-        unsafe_data: unsafe { NonNull::new_unchecked(ptr) },
+        unsafe_data: unsafe { NonZeroU64::new_unchecked(data) },
     }
 }
 
@@ -137,7 +150,7 @@ impl Storage for &'_ mut AtomStore {
                         string: text.into_owned().into_boxed_str(),
                         hash,
                         store_id,
-                        alias: AtomicPtr::new(null_mut()),
+                        alias: AtomicU64::new(0),
                     })
                 });
                 let new = e.clone();

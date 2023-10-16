@@ -4,8 +4,8 @@ use std::{
     fmt::{Debug, Display},
     hash::Hash,
     mem::forget,
+    num::NonZeroU64,
     ops::Deref,
-    ptr::NonNull,
     sync::{atomic::Ordering::SeqCst, Arc},
 };
 
@@ -63,7 +63,7 @@ mod tests;
 
 pub struct Atom {
     // If this Atom is a dynamic one, this is *const Entry
-    unsafe_data: NonNull<Entry>,
+    unsafe_data: NonZeroU64,
 }
 
 /// Immutable, so it's safe to be shared between threads
@@ -98,13 +98,8 @@ const STATIC_SHIFT_BITS: usize = 32;
 
 impl Atom {
     #[inline]
-    fn get_data_as_u64(&self) -> u64 {
-        self.unsafe_data.as_ptr() as u64
-    }
-
-    #[inline]
     fn tag(&self) -> u8 {
-        (self.get_data_as_u64() & TAG_MASK) as u8
+        (self.unsafe_data.get() & TAG_MASK) as u8
     }
 
     /// Return true if this is a static Atom.
@@ -129,10 +124,10 @@ impl Atom {
 impl Atom {
     fn get_hash(&self) -> u32 {
         match self.tag() {
-            DYNAMIC_TAG => unsafe { self.unsafe_data.as_ref() }.hash,
+            DYNAMIC_TAG => unsafe { Entry::deref_from(self.unsafe_data) }.hash,
             STATIC_TAG => {}
             INLINE_TAG => {
-                let data = self.get_data_as_u64();
+                let data = self.unsafe_data.get();
                 // This may or may not be great...
                 ((data >> 32) ^ data) as u32
             }
@@ -143,7 +138,9 @@ impl Atom {
     #[inline]
     fn as_str(&self) -> &str {
         match self.tag() {
-            DYNAMIC_TAG => unsafe { self.unsafe_data.as_ref() }.string.as_ref(),
+            DYNAMIC_TAG => unsafe { Entry::deref_from(self.unsafe_data) }
+                .string
+                .as_ref(),
             STATIC_TAG => {}
             INLINE_TAG => {}
         }
@@ -155,8 +152,8 @@ impl Atom {
             return Some(true);
         }
 
-        let te = unsafe { self.unsafe_data.as_ref() };
-        let oe = unsafe { other.unsafe_data.as_ref() };
+        let te = unsafe { Entry::deref_from(self.unsafe_data) };
+        let oe = unsafe { Entry::deref_from(other.unsafe_data) };
 
         if te.hash != oe.hash {
             return Some(false);
@@ -164,13 +161,13 @@ impl Atom {
 
         // This is slow, but we don't reach here in most cases
 
-        if let Some(other_alias) = NonNull::new(oe.alias.load(SeqCst)) {
+        if let Some(other_alias) = NonZeroU64::new(oe.alias.load(SeqCst)) {
             if let Some(result) = self.fast_eq(&Atom::from_alias(other_alias)) {
                 return Some(result);
             }
         }
 
-        if let Some(self_alias) = NonNull::new(te.alias.load(SeqCst)) {
+        if let Some(self_alias) = NonZeroU64::new(te.alias.load(SeqCst)) {
             if let Some(result) = other.fast_eq(&Atom::from_alias(self_alias)) {
                 return Some(result);
             }
@@ -188,8 +185,8 @@ impl PartialEq for Atom {
         }
 
         if self.is_dynamic() {
-            let te = unsafe { self.unsafe_data.as_ref() };
-            let oe = unsafe { other.unsafe_data.as_ref() };
+            let te = unsafe { Entry::deref_from(self.unsafe_data) };
+            let oe = unsafe { Entry::deref_from(other.unsafe_data) };
 
             // If the store is the same, the same string has same `unsafe_data``
             match (&te.store_id, &oe.store_id) {
@@ -242,8 +239,8 @@ impl Clone for Atom {
 }
 
 impl Atom {
-    pub(crate) fn from_alias(alias: NonNull<Entry>) -> Self {
-        if ((alias.as_ptr() as u64) & TAG_MASK) as u8 == DYNAMIC_TAG {
+    pub(crate) fn from_alias(alias: NonZeroU64) -> Self {
+        if (alias.get() & TAG_MASK) as u8 == DYNAMIC_TAG {
             unsafe {
                 let arc = Entry::restore_arc(alias);
                 forget(arc.clone());
