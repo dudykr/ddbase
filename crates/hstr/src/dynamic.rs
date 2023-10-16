@@ -119,7 +119,11 @@ impl Storage for &'_ mut AtomStore {
         });
 
         match existing {
-            Some(e) => e,
+            Some(existing) => {
+                dbg!(Arc::strong_count(&existing));
+
+                existing
+            }
             None => {
                 let e = no_inline_wrap(|| {
                     Arc::new(Entry {
@@ -129,11 +133,13 @@ impl Storage for &'_ mut AtomStore {
                         alias: AtomicPtr::new(null_mut()),
                     })
                 });
-                let v = e.clone();
+                let new = e.clone();
 
                 entries.push(e);
 
-                v
+                dbg!(Arc::strong_count(&new));
+
+                new
             }
         }
     }

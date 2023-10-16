@@ -183,9 +183,6 @@ impl Drop for Atom {
         #[inline(never)]
         fn drop_slow(arc: Arc<Entry>) {
             dbg!(Arc::strong_count(&arc));
-            if Arc::strong_count(&arc) > 12312839 {
-                panic!()
-            }
             drop(arc);
         }
     }
@@ -202,6 +199,7 @@ impl Atom {
         if true {
             unsafe {
                 let arc = Entry::restore_arc(alias);
+                forget(arc.clone());
                 forget(arc);
             }
         }

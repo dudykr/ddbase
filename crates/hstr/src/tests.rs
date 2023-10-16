@@ -10,7 +10,9 @@ fn store_with_atoms(texts: Vec<&str>) -> (AtomStore, Vec<Atom>) {
 
 #[test]
 fn simple_usage() {
-    let (_s, atoms) = store_with_atoms(vec!["Hello, world!", "Hello, world!"]);
+    let (s, atoms) = store_with_atoms(vec!["Hello, world!", "Hello, world!"]);
+
+    drop(s);
 
     let a1 = atoms[0].clone();
 
