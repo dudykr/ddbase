@@ -7,7 +7,7 @@ use std::{
     num::{NonZeroU32, NonZeroU64},
     sync::{
         atomic::{AtomicU32, AtomicU64, Ordering::SeqCst},
-        Arc, Weak,
+        Arc,
     },
 };
 
@@ -46,9 +46,6 @@ impl Entry {
 pub struct AtomStore {
     pub(crate) id: Option<NonZeroU32>,
     pub(crate) data: FxHashMap<u32, SmallVec<[Arc<Entry>; 4]>>,
-
-    /// Exists just to prevent dropping of the entries
-    pub(crate) extras: Vec<Weak<Entry>>,
 }
 
 impl Default for AtomStore {
@@ -58,7 +55,6 @@ impl Default for AtomStore {
         Self {
             id: Some(unsafe { NonZeroU32::new_unchecked(ATOM_STORE_ID.fetch_add(1, SeqCst)) }),
             data: HashMap::with_capacity_and_hasher(64, Default::default()),
-            extras: Default::default(),
         }
     }
 }
@@ -76,10 +72,8 @@ impl AtomStore {
 
                 entry.alias.store(unsafe_data, SeqCst);
 
-                forget(entry.clone());
-
                 // Don't drop the entry
-                self.extras.push(Arc::downgrade(&entry));
+                forget(entry.clone());
             }
         }
     }
