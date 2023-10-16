@@ -132,7 +132,7 @@ impl Atom {
             DYNAMIC_TAG => unsafe { self.unsafe_data.as_ref() }.hash,
             STATIC_TAG => {}
             INLINE_TAG => {
-                let data = self.unsafe_data.get();
+                let data = self.get_data_as_u64();
                 // This may or may not be great...
                 ((data >> 32) ^ data) as u32
             }
@@ -142,7 +142,11 @@ impl Atom {
 
     #[inline]
     fn as_str(&self) -> &str {
-        unsafe { self.unsafe_data.as_ref() }.string.as_ref()
+        match self.tag() {
+            DYNAMIC_TAG => unsafe { self.unsafe_data.as_ref() }.string.as_ref(),
+            STATIC_TAG => {}
+            INLINE_TAG => {}
+        }
     }
 
     #[inline(never)]
@@ -183,25 +187,27 @@ impl PartialEq for Atom {
             return result;
         }
 
-        let te = unsafe { self.unsafe_data.as_ref() };
-        let oe = unsafe { other.unsafe_data.as_ref() };
+        if self.is_dynamic() {
+            let te = unsafe { self.unsafe_data.as_ref() };
+            let oe = unsafe { other.unsafe_data.as_ref() };
 
-        // If the store is the same, the same string has same `unsafe_data``
-        match (&te.store_id, &oe.store_id) {
-            (Some(this_store), Some(other_store)) => {
-                if this_store == other_store {
+            // If the store is the same, the same string has same `unsafe_data``
+            match (&te.store_id, &oe.store_id) {
+                (Some(this_store), Some(other_store)) => {
+                    if this_store == other_store {
+                        return false;
+                    }
+                }
+                (None, None) => {
                     return false;
                 }
+                _ => {}
             }
-            (None, None) => {
-                return false;
-            }
-            _ => {}
         }
 
         // If the store is different, the string may be the same, even though the
         // `unsafe_data` is different
-        te.string == oe.string
+        self.as_str() == other.as_str()
     }
 }
 
@@ -237,7 +243,7 @@ impl Clone for Atom {
 
 impl Atom {
     pub(crate) fn from_alias(alias: NonNull<Entry>) -> Self {
-        if true {
+        if ((alias.as_ptr() as u64) & TAG_MASK) as u8 == DYNAMIC_TAG {
             unsafe {
                 let arc = Entry::restore_arc(alias);
                 forget(arc.clone());
