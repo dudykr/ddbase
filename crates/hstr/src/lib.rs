@@ -64,7 +64,10 @@ pub struct Atom {
     unsafe_data: NonNull<Entry>,
 }
 
+/// Immutable, so it's safe to be shared between threads
 unsafe impl Send for Atom {}
+
+/// Immutable, so it's safe to be shared between threads
 unsafe impl Sync for Atom {}
 
 impl Display for Atom {
