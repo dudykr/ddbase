@@ -3,7 +3,6 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     hash::{Hash, Hasher},
-    mem::forget,
     num::NonZeroU32,
     ptr::{null_mut, NonNull},
     sync::{
