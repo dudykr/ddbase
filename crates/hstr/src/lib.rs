@@ -71,14 +71,16 @@ unsafe impl Send for Atom {}
 unsafe impl Sync for Atom {}
 
 impl Display for Atom {
+    #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.as_str(), f)
+        Display::fmt(self.as_str(), f)
     }
 }
 
 impl Debug for Atom {
+    #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(&self.as_str(), f)
+        Debug::fmt(self.as_str(), f)
     }
 }
 
