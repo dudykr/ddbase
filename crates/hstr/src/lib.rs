@@ -6,6 +6,7 @@ use std::{
     mem::forget,
     num::NonZeroU64,
     ops::Deref,
+    slice,
     sync::{atomic::Ordering::SeqCst, Arc},
 };
 
@@ -125,7 +126,9 @@ impl Atom {
     fn get_hash(&self) -> u32 {
         match self.tag() {
             DYNAMIC_TAG => unsafe { Entry::deref_from(self.unsafe_data) }.hash,
-            STATIC_TAG => {}
+            STATIC_TAG => {
+                todo!("static hash")
+            }
             INLINE_TAG => {
                 let data = self.unsafe_data.get();
                 // This may or may not be great...
@@ -141,8 +144,15 @@ impl Atom {
             DYNAMIC_TAG => unsafe { Entry::deref_from(self.unsafe_data) }
                 .string
                 .as_ref(),
-            STATIC_TAG => {}
-            INLINE_TAG => {}
+            STATIC_TAG => {
+                todo!("static as_str")
+            }
+            INLINE_TAG => {
+                let len = (self.unsafe_data.get() & LEN_MASK) >> LEN_OFFSET;
+                let src = inline_atom_slice(&self.unsafe_data);
+                unsafe { std::str::from_utf8_unchecked(&src[..(len as usize)]) }
+            }
+            _ => unsafe { debug_unreachable!() },
         }
     }
 
@@ -258,5 +268,49 @@ impl Deref for Atom {
     #[inline]
     fn deref(&self) -> &Self::Target {
         self.as_str()
+    }
+}
+
+impl AsRef<str> for Atom {
+    #[inline]
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl PartialEq<str> for Atom {
+    #[inline]
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+#[inline(always)]
+fn inline_atom_slice(x: &NonZeroU64) -> &[u8] {
+    unsafe {
+        let x: *const NonZeroU64 = x;
+        let mut data = x as *const u8;
+        // All except the lowest byte, which is first in little-endian, last in
+        // big-endian.
+        if cfg!(target_endian = "little") {
+            data = data.offset(1);
+        }
+        let len = 7;
+        slice::from_raw_parts(data, len)
+    }
+}
+
+#[inline(always)]
+fn inline_atom_slice_mut(x: &mut u64) -> &mut [u8] {
+    unsafe {
+        let x: *mut u64 = x;
+        let mut data = x as *mut u8;
+        // All except the lowest byte, which is first in little-endian, last in
+        // big-endian.
+        if cfg!(target_endian = "little") {
+            data = data.offset(1);
+        }
+        let len = 7;
+        slice::from_raw_parts_mut(data, len)
     }
 }

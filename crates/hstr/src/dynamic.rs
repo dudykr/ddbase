@@ -14,7 +14,7 @@ use std::{
 use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
 
-use crate::{Atom, INLINE_TAG, LEN_OFFSET, MAX_INLINE_LEN, TAG_MASK};
+use crate::{inline_atom_slice_mut, Atom, INLINE_TAG, LEN_OFFSET, MAX_INLINE_LEN, TAG_MASK};
 
 #[derive(Debug)]
 pub(crate) struct Entry {
