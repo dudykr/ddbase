@@ -285,12 +285,14 @@ impl Drop for Atom {
 }
 
 impl Clone for Atom {
+    #[inline]
     fn clone(&self) -> Self {
         Self::from_alias(self.unsafe_data)
     }
 }
 
 impl Atom {
+    #[inline]
     pub(crate) fn from_alias(alias: NonZeroU64) -> Self {
         if (alias.get() & TAG_MASK) as u8 == DYNAMIC_TAG {
             unsafe {
