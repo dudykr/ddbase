@@ -236,7 +236,7 @@ impl PartialEq for Atom {
             return result;
         }
 
-        if self.is_dynamic() {
+        if self.is_dynamic() && other.is_dynamic() {
             let te = unsafe { Entry::deref_from(self.unsafe_data) };
             let oe = unsafe { Entry::deref_from(other.unsafe_data) };
 
