@@ -7,7 +7,7 @@ use std::{
     num::NonZeroU64,
     ops::Deref,
     slice,
-    sync::{atomic::Ordering::SeqCst, Arc},
+    sync::atomic::Ordering::SeqCst,
 };
 
 use debug_unreachable::debug_unreachable;
@@ -273,13 +273,7 @@ impl Drop for Atom {
     #[inline]
     fn drop(&mut self) {
         if self.is_dynamic() {
-            unsafe { drop_slow(Entry::restore_arc(self.unsafe_data)) }
-        }
-
-        #[cold]
-        #[inline(never)]
-        fn drop_slow(arc: Arc<Entry>) {
-            drop(arc);
+            unsafe { drop(Entry::restore_arc(self.unsafe_data)) }
         }
     }
 }
