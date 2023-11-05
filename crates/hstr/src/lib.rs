@@ -202,6 +202,8 @@ impl Atom {
             return Some(true);
         }
 
+        // If one is inline and the other is not, the length is different.
+        // If one is static and the other is not, it's different.
         if self.tag() != other.tag() {
             return Some(false);
         }
