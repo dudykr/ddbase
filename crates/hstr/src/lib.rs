@@ -117,6 +117,12 @@ impl Atom {
     fn is_dynamic(&self) -> bool {
         self.tag() == DYNAMIC_TAG
     }
+
+    /// Return true if this is a dynamic Atom.
+    #[inline]
+    fn is_inline(&self) -> bool {
+        self.tag() == INLINE_TAG
+    }
 }
 
 impl Atom {
@@ -199,6 +205,10 @@ impl Atom {
     fn simple_eq(&self, other: &Self) -> Option<bool> {
         if self.unsafe_data == other.unsafe_data {
             return Some(true);
+        }
+
+        if self.is_inline() != other.is_inline() {
+            return Some(false);
         }
 
         if self.get_hash() != other.get_hash() {
