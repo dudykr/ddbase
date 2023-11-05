@@ -107,21 +107,15 @@ const MAX_INLINE_LEN: usize = 7;
 // const STATIC_SHIFT_BITS: usize = 32;
 
 impl Atom {
-    #[inline]
+    #[inline(always)]
     fn tag(&self) -> u8 {
         (self.unsafe_data.get() & TAG_MASK) as u8
     }
 
     /// Return true if this is a dynamic Atom.
-    #[inline]
+    #[inline(always)]
     fn is_dynamic(&self) -> bool {
         self.tag() == DYNAMIC_TAG
-    }
-
-    /// Return true if this is a dynamic Atom.
-    #[inline]
-    fn is_inline(&self) -> bool {
-        self.tag() == INLINE_TAG
     }
 }
 
@@ -208,7 +202,7 @@ impl Atom {
             return Some(true);
         }
 
-        if self.is_inline() != other.is_inline() {
+        if self.tag() != other.tag() {
             return Some(false);
         }
 
