@@ -132,10 +132,6 @@ impl Storage for &'_ mut AtomStore {
 
         // TODO(kdy1): This is extermely slow
         let existing = no_inline_wrap(|| {
-            if entries.len() == 1 {
-                return Some(entries[0].clone());
-            }
-
             entries
                 .iter()
                 .find(|entry| entry.hash == hash && *entry.string == text)
