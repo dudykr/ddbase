@@ -211,6 +211,10 @@ impl Atom {
             return Some(false);
         }
 
+        if self.len() != other.len() {
+            return Some(false);
+        }
+
         if self.get_hash() != other.get_hash() {
             return Some(false);
         }
