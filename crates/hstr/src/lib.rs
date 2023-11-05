@@ -168,6 +168,7 @@ impl Atom {
 }
 
 impl Atom {
+    #[inline]
     fn get_hash(&self) -> u32 {
         match self.tag() {
             DYNAMIC_TAG => unsafe { Entry::deref_from(self.unsafe_data) }.hash,
