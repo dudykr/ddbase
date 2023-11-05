@@ -13,8 +13,8 @@ use std::{
 use debug_unreachable::debug_unreachable;
 use once_cell::sync::Lazy;
 
+pub use crate::dynamic::AtomStore;
 use crate::dynamic::Entry;
-pub use crate::{dynamic::AtomStore, global_store::*};
 
 mod dynamic;
 mod global_store;
