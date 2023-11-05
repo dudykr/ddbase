@@ -126,7 +126,7 @@ fn bench_basic_creation(c: &mut Criterion) {
             move || {
                 i += 1;
 
-                if i % 5 == 0 {
+                if black_box(i) % 5 == 0 {
                     text.clone()
                 } else {
                     random_string(len)

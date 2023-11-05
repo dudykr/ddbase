@@ -64,7 +64,7 @@ fn store_merge_two() {
     let a1 = atoms1[0].clone();
     let a2 = atoms2[0].clone();
     assert_eq!(a1, a2);
-    assert!(!a1.fast_eq(&a2).unwrap_or_default());
+    assert!(!a1.simple_eq(&a2).unwrap_or_default());
 
     s1.merge(s2);
 
@@ -84,8 +84,8 @@ fn store_merge_two() {
         "Merged store should give different address as `other`"
     );
 
-    assert!(a1.fast_eq(&a3).unwrap_or_default());
-    assert!(a2.fast_eq(&a3).unwrap_or_default());
+    assert!(a1.simple_eq(&a3).unwrap_or_default());
+    assert!(a2.simple_eq(&a3).unwrap_or_default());
 }
 
 #[test]
@@ -99,11 +99,11 @@ fn store_merge_many_1() {
     let a3 = atoms3[0].clone();
 
     assert_eq!(a1, a2);
-    assert_eq!(a1.fast_eq(&a2), None, "Same string, but different stores");
+    assert_eq!(a1.simple_eq(&a2), None, "Same string, but different stores");
     assert_ne!(a1, a3);
-    assert_eq!(a1.fast_eq(&a3), Some(false));
+    assert_eq!(a1.simple_eq(&a3), Some(false));
     assert_ne!(a2, a3);
-    assert_eq!(a2.fast_eq(&a3), Some(false));
+    assert_eq!(a2.simple_eq(&a3), Some(false));
 
     s1.merge(s2);
     s1.merge(s3);
@@ -128,9 +128,9 @@ fn store_merge_many_1() {
         "Merged store should give different address as `other`"
     );
 
-    assert_eq!(a1.fast_eq(&a4), Some(true));
-    assert_eq!(a2.fast_eq(&a4), Some(true));
-    assert_eq!(a3.fast_eq(&a4), Some(false));
+    assert_eq!(a1.simple_eq(&a4), Some(true));
+    assert_eq!(a2.simple_eq(&a4), Some(true));
+    assert_eq!(a3.simple_eq(&a4), Some(false));
 
     assert_eq!(a1, a4);
     assert_eq!(a2, a4);
