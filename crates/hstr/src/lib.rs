@@ -195,8 +195,8 @@ impl Atom {
         }
     }
 
-    #[inline(never)]
-    fn fast_eq(&self, other: &Self) -> Option<bool> {
+    #[inline]
+    fn simple_eq(&self, other: &Self) -> Option<bool> {
         if self.unsafe_data == other.unsafe_data {
             return Some(true);
         }
@@ -205,12 +205,17 @@ impl Atom {
             return Some(false);
         }
 
+        self.simple_eq_slow(other)
+    }
+
+    #[inline(never)]
+    fn simple_eq_slow(&self, other: &Self) -> Option<bool> {
         if self.is_dynamic() {
             // This is slow, but we don't reach here in most cases
             let te = unsafe { Entry::deref_from(self.unsafe_data) };
 
             if let Some(self_alias) = NonZeroU64::new(te.alias.load(SeqCst)) {
-                if let Some(result) = other.fast_eq(&Atom::from_alias(self_alias)) {
+                if let Some(result) = other.simple_eq(&Atom::from_alias(self_alias)) {
                     return Some(result);
                 }
             }
@@ -219,7 +224,7 @@ impl Atom {
         if other.is_dynamic() {
             let oe = unsafe { Entry::deref_from(other.unsafe_data) };
             if let Some(other_alias) = NonZeroU64::new(oe.alias.load(SeqCst)) {
-                if let Some(result) = self.fast_eq(&Atom::from_alias(other_alias)) {
+                if let Some(result) = self.simple_eq(&Atom::from_alias(other_alias)) {
                     return Some(result);
                 }
             }
@@ -232,7 +237,7 @@ impl Atom {
 impl PartialEq for Atom {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        if let Some(result) = self.fast_eq(other) {
+        if let Some(result) = self.simple_eq(other) {
             return result;
         }
 
