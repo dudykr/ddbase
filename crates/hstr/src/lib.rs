@@ -162,7 +162,7 @@ impl Atom {
 }
 
 impl Atom {
-    #[inline]
+    #[inline(never)]
     fn get_hash(&self) -> u32 {
         match self.tag() {
             DYNAMIC_TAG => unsafe { Entry::deref_from(self.unsafe_data) }.hash,
@@ -178,7 +178,7 @@ impl Atom {
         }
     }
 
-    #[inline]
+    #[inline(never)]
     fn as_str(&self) -> &str {
         match self.tag() {
             DYNAMIC_TAG => unsafe { Entry::deref_from(self.unsafe_data) }
@@ -196,7 +196,7 @@ impl Atom {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn simple_eq(&self, other: &Self) -> Option<bool> {
         if self.unsafe_data == other.unsafe_data {
             return Some(true);
@@ -242,7 +242,7 @@ impl Atom {
 }
 
 impl PartialEq for Atom {
-    #[inline]
+    #[inline(never)]
     fn eq(&self, other: &Self) -> bool {
         if let Some(result) = self.simple_eq(other) {
             return result;
@@ -275,14 +275,14 @@ impl PartialEq for Atom {
 impl Eq for Atom {}
 
 impl Hash for Atom {
-    #[inline]
+    #[inline(always)]
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         state.write_u32(self.get_hash());
     }
 }
 
 impl Drop for Atom {
-    #[inline]
+    #[inline(always)]
     fn drop(&mut self) {
         if self.is_dynamic() {
             unsafe { drop(Entry::restore_arc(self.unsafe_data)) }
@@ -291,7 +291,7 @@ impl Drop for Atom {
 }
 
 impl Clone for Atom {
-    #[inline]
+    #[inline(always)]
     fn clone(&self) -> Self {
         Self::from_alias(self.unsafe_data)
     }
@@ -315,14 +315,14 @@ impl Atom {
 impl Deref for Atom {
     type Target = str;
 
-    #[inline]
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         self.as_str()
     }
 }
 
 impl AsRef<str> for Atom {
-    #[inline]
+    #[inline(always)]
     fn as_ref(&self) -> &str {
         self.as_str()
     }
