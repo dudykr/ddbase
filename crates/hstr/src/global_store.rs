@@ -1,61 +1,17 @@
-use std::{
-    borrow::Cow,
-    hash::BuildHasherDefault,
-    sync::{Arc, Weak},
-};
+use std::{borrow::Cow, cell::RefCell};
 
-use dashmap::DashMap;
-use once_cell::sync::Lazy;
-use rustc_hash::FxHasher;
-use smallvec::SmallVec;
-
-use crate::{
-    dynamic::{new_atom, Entry, Storage},
-    Atom,
-};
-
-#[derive(Default)]
-struct GlobalData {
-    data: DashMap<u32, SmallVec<[Weak<Entry>; 4]>, BuildHasherDefault<FxHasher>>,
-}
-
-impl Storage for &'_ GlobalData {
-    fn insert_entry(self, text: Cow<str>, hash: u32) -> Arc<Entry> {
-        let mut entries = self.data.entry(hash).or_insert_with(Default::default);
-
-        // TODO(kdy1): This is extermely slow
-        let existing = entries.iter().find_map(|entry| {
-            let entry = entry.upgrade()?;
-
-            if entry.hash == hash && *entry.string == text {
-                Some(entry)
-            } else {
-                None
-            }
-        });
-
-        match existing {
-            Some(e) => e,
-            None => {
-                let e = Arc::new(Entry {
-                    string: text.into_owned().into_boxed_str(),
-                    hash,
-                    store_id: None,
-                    alias: Default::default(),
-                });
-
-                entries.push(Arc::downgrade(&e));
-
-                e
-            }
-        }
-    }
-}
+use crate::{Atom, AtomStore};
 
 fn atom(text: Cow<str>) -> Atom {
-    static GLOBAL_DATA: Lazy<GlobalData> = Lazy::new(Default::default);
+    thread_local! {
+        static GLOBAL_DATA: RefCell<AtomStore> = Default::default();
+    }
 
-    new_atom(&*GLOBAL_DATA, text)
+    GLOBAL_DATA.with(|global| {
+        let mut store = global.borrow_mut();
+
+        store.atom(text)
+    })
 }
 
 macro_rules! direct_from_impl {
