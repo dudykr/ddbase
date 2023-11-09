@@ -1,6 +1,6 @@
 # hstr
 
-A string optimized for use as a key with `HashMap`.
+A high-performance string interning library for Rust. This crate is intended for the compilers or build tools like a bundler, written in Rust.
 
 See the [documentation](https://docs.rs/hstr) for more information.
 
