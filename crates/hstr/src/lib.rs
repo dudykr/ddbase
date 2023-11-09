@@ -113,7 +113,7 @@ impl Debug for Atom {
 impl serde::ser::Serialize for Atom {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: Serializer,
+        S: serde::ser::Serializer,
     {
         serializer.serialize_str(self)
     }
