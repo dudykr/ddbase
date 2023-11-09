@@ -68,11 +68,21 @@ pub struct Atom {
     unsafe_data: NonZeroU64,
 }
 
+#[doc(hidden)]
+pub type CachedAtom = Lazy<Atom>;
+
+#[macro_export]
+macro_rules! atom {
+    ($s:tt) => {{
+        static CACHE: $crate::CachedAtom = $crate::CachedAtom::new(|| $crate::Atom::from($s));
+        $crate::Atom::clone(&*CACHE)
+    }};
+}
+
 impl Default for Atom {
     #[inline(never)]
     fn default() -> Self {
-        static EMPTY: Lazy<Atom> = Lazy::new(|| Atom::from(""));
-        EMPTY.clone()
+        atom!("")
     }
 }
 
@@ -93,6 +103,26 @@ impl Debug for Atom {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Debug::fmt(self.as_str(), f)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::ser::Serialize for Atom {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::de::Deserialize<'de> for Atom {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        String::deserialize(deserializer).map(Self::new)
     }
 }
 
@@ -332,6 +362,20 @@ impl PartialEq<str> for Atom {
     #[inline]
     fn eq(&self, other: &str) -> bool {
         self.as_str() == other
+    }
+}
+
+impl PartialEq<&'_ str> for Atom {
+    #[inline]
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<Atom> for &'_ str {
+    #[inline]
+    fn eq(&self, other: &Atom) -> bool {
+        *self == other.as_str()
     }
 }
 
