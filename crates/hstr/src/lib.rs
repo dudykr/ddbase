@@ -128,7 +128,6 @@ impl<'de> serde::de::Deserialize<'de> for Atom {
         String::deserialize(deserializer).map(Self::new)
     }
 }
-
 const DYNAMIC_TAG: u8 = 0b_00;
 const INLINE_TAG: u8 = 0b_01; // len in upper nybble
 const STATIC_TAG: u8 = 0b_10;
@@ -140,6 +139,14 @@ const MAX_INLINE_LEN: usize = 7;
 // const STATIC_SHIFT_BITS: usize = 32;
 
 impl Atom {
+    #[inline(always)]
+    pub fn new<S>(s: S) -> Self
+    where
+        Self: From<S>,
+    {
+        Self::from(s)
+    }
+
     #[inline(always)]
     fn tag(&self) -> u8 {
         (self.unsafe_data.get() & TAG_MASK) as u8
