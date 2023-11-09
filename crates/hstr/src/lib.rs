@@ -372,10 +372,10 @@ impl PartialEq<&'_ str> for Atom {
     }
 }
 
-impl PartialEq<Atom> for &'_ str {
+impl PartialEq<Atom> for str {
     #[inline]
     fn eq(&self, other: &Atom) -> bool {
-        *self == other.as_str()
+        self == other.as_str()
     }
 }
 
