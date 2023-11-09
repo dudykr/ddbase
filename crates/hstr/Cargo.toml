@@ -1,6 +1,6 @@
 [package]
 name = "hstr"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 authors = ["강동윤 <kdy1997.dev@gmail.com>"]
 description = "A string type which is optimized for hash operations."
@@ -14,12 +14,18 @@ bench = false
 name = "libs"
 harness = false
 
+[features]
+serde = ["dep:serde"]
+rkyv = ["dep:rkyv"]
+
 
 [dependencies]
 new_debug_unreachable = "1.0.4"
 once_cell = "1.18.0"
 phf = "0.11.2"
+rkyv = { version = "0.7.42", default-features = false, optional = true }
 rustc-hash = "1.1.0"
+serde = { version = "1.0.192", optional = true }
 smallvec = "1.11.1"
 
 [dev-dependencies]

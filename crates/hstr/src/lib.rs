@@ -68,11 +68,24 @@ pub struct Atom {
     unsafe_data: NonZeroU64,
 }
 
+#[doc(hidden)]
+pub type CachedAtom = Lazy<Atom>;
+
+/// Create an atom from a string literal. This atom is never dropped.
+#[macro_export]
+macro_rules! atom {
+    ($s:tt) => {{
+        thread_local! {
+            static CACHE: $crate::Atom = $crate::Atom::from($s);
+        }
+        CACHE.with(|cache| $crate::Atom::clone(cache))
+    }};
+}
+
 impl Default for Atom {
     #[inline(never)]
     fn default() -> Self {
-        static EMPTY: Lazy<Atom> = Lazy::new(|| Atom::from(""));
-        EMPTY.clone()
+        atom!("")
     }
 }
 
@@ -93,6 +106,26 @@ impl Debug for Atom {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Debug::fmt(self.as_str(), f)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::ser::Serialize for Atom {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::de::Deserialize<'de> for Atom {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        String::deserialize(deserializer).map(Self::new)
     }
 }
 
@@ -332,6 +365,53 @@ impl PartialEq<str> for Atom {
     #[inline]
     fn eq(&self, other: &str) -> bool {
         self.as_str() == other
+    }
+}
+
+impl PartialEq<&'_ str> for Atom {
+    #[inline]
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<Atom> for str {
+    #[inline]
+    fn eq(&self, other: &Atom) -> bool {
+        self == other.as_str()
+    }
+}
+
+/// NOT A PUBLIC API
+#[cfg(feature = "rkyv")]
+impl rkyv::Archive for Atom {
+    type Archived = rkyv::string::ArchivedString;
+    type Resolver = rkyv::string::StringResolver;
+
+    #[allow(clippy::unit_arg)]
+    unsafe fn resolve(&self, pos: usize, resolver: Self::Resolver, out: *mut Self::Archived) {
+        rkyv::string::ArchivedString::resolve_from_str(self, pos, resolver, out)
+    }
+}
+
+/// NOT A PUBLIC API
+#[cfg(feature = "rkyv")]
+impl<S: rkyv::ser::Serializer + ?Sized> rkyv::Serialize<S> for Atom {
+    fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        String::serialize(&self.to_string(), serializer)
+    }
+}
+
+/// NOT A PUBLIC API
+#[cfg(feature = "rkyv")]
+impl<D> rkyv::Deserialize<Atom, D> for rkyv::string::ArchivedString
+where
+    D: ?Sized + rkyv::Fallible,
+{
+    fn deserialize(&self, deserializer: &mut D) -> Result<Atom, <D as rkyv::Fallible>::Error> {
+        let s: String = self.deserialize(deserializer)?;
+
+        Ok(Atom::new(s))
     }
 }
 
