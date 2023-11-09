@@ -21,32 +21,33 @@ mod global_store;
 #[cfg(test)]
 mod tests;
 
-/// An atom is an immutable string that is stored in some [AtomStore].
+/// An immutable string which is cheap to clone, compare, hash, and has small
+/// size.
 ///
+/// # Usecase
+///
+/// This type is designed for the compilers or build tools like a bundler
+/// written in Rust. String interning is much costly than simply allocating a
+/// string, but in compilers, hashing and comparison of strings are very
+/// frequent operations for some of strings, and the other strings are mostly
+/// just passed around. According to DoD, we should optimize types
+/// for operations that occur frequently, and this type is the result.
 ///
 /// # Features
 ///
-/// ## Fast equality check (in most cases)
+/// ## No mutex on creation and destruction.
 ///
-/// Equality comparison is O(1). If two atoms are from the same store, or
-/// they are from different stores but they are [`AtomStore::merge`]d, they are
-/// compared by numeric equality.
+/// This type also considers concurrent processing of AST nodes. Parsers
+/// generates lots of [Atom]s, so the creation of [Atom] should never involve a
+/// global mutex, because parsers are embarrassingly parallel. Also, the AST
+/// nodes are typically dropped in parallel. So [Drop] implementation of [Atom]
+/// should not involve a global mutex, too.
 ///
-///
-/// ## Fast [Hash] implementation
-///
-///
-///
-/// ## Lock-free creation
-///
-/// - Note: This applies if you create atoms via [AtomStore]. If you create
-///   atoms via global APIs, this does not apply.
-///
-/// ## Lock-free drop
-///
-/// [Drop] does not lock any mutex.
 ///
 /// ## Small size (One `u64`)
+///
+/// The most of strings are simply passed around, so the size of [Atom] should
+/// be small as possible.
 ///
 /// ```rust
 /// # use std::mem::size_of;
@@ -55,7 +56,28 @@ mod tests;
 /// assert!(size_of::<Option<Atom>>() == size_of::<u64>());
 /// ````
 ///
+///
+/// ## Fast equality check (in most cases)
+///
+/// Equality comparison is O(1) in most cases. If two atoms are from the same
+/// [AtomStore], or they are from different stores but they are
+/// [`AtomStore::merge`]d, they are compared by numeric equality.
+///
+/// If two strings are created from different [AtomStore]s, they are compared
+/// using `strcmp` by default. But `hstr` allows you to make `==` faster -
+/// [`AtomStore::merge`].
+///
+///
+/// ## Fast [Hash] implementation
+///
+/// [Atom] precompute the hash value of long strings when they are created, so
+/// it is `O(1)` to compute hash.
+///
+///
 /// ## Small strings as inline data
+///
+/// Small strings are stored in the [Atom] itself without any allocation.
+///
 ///
 /// # Creating atoms
 ///
