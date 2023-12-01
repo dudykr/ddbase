@@ -1,5 +1,5 @@
 use derive_default_from_serde::SerdeDefault;
-use serde::Deserialize;
+use serde_derive::Deserialize;
 
 #[derive(SerdeDefault, Deserialize)]
-pub struct Struct1 {}
+struct Struct1 {}

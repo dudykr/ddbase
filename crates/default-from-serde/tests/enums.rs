@@ -1,8 +1,8 @@
 use derive_default_from_serde::SerdeDefault;
-use serde::Deserialize;
+use serde_derive::Deserialize;
 
 #[derive(SerdeDefault, Deserialize)]
-pub enum Enum1 {
+enum Enum1 {
     A(Foo),
     B(Bar),
     C(Baz),
