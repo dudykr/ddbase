@@ -1,5 +1,11 @@
+use std::borrow::Cow;
+
 pub use derive_default_from_serde::SerdeDefault;
-use serde::{de, de::Visitor};
+use serde::{
+    de,
+    de::{Expected, Unexpected, Visitor},
+    forward_to_deserialize_any,
+};
 
 // We only use our own error type; no need for From conversions provided by the
 // standard library's try! macro. This reduces lines of LLVM IR by 4%.
@@ -707,7 +713,7 @@ impl<'de> Visitor<'de> for KeyClassifier {
     }
 }
 
-impl Value {
+impl DefaultDeserializer {
     #[cold]
     fn invalid_type<E>(&self, exp: &dyn Expected) -> E
     where
@@ -718,14 +724,7 @@ impl Value {
 
     #[cold]
     fn unexpected(&self) -> Unexpected {
-        match self {
-            Value::Null => Unexpected::Unit,
-            Value::Bool(b) => Unexpected::Bool(*b),
-            Value::Number(n) => n.unexpected(),
-            Value::String(s) => Unexpected::Str(s),
-            Value::Array(_) => Unexpected::Seq,
-            Value::Object(_) => Unexpected::Map,
-        }
+        Unexpected::Unit
     }
 }
 
