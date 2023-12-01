@@ -2,30 +2,31 @@
 //! `Default` from `serde::Deserialize`.
 //!
 //! # Usage
-//1 ```
-//1 use default_from_serde::SerdeDefault;
-//1
-//1 #[derive(SerdeDefault)]
-//1 pub struct ComplexTypewithDefault {
-//1     #[serde(default)]
-//1     pub a: i32,
-//1     #[serde(defaul = "default_b")]
-//1     pub b: String,
-//1     #[serde(default)]
-//1     pub c: Vec<i32>,
-//1 }
-//1
-//1 fn default_b() -> String {
-//1     "default".to_string()
-//1 }
-//1
-//1 fn use_it() {
-//1     let x = ComplexTypewithDefault::default();
-//1
-//1     assert_eq!(x.b, "default");
-//1 }
-//1
-//1 ````
+//!
+//!
+//! ```
+//! use default_from_serde::SerdeDefault;
+//!
+//! #[derive(SerdeDefault)]
+//! pub struct ComplexTypewithDefault {
+//!     #[serde(default)]
+//!     pub a: i32,
+//!     #[serde(defaul = "default_b")]
+//!     pub b: String,
+//!     #[serde(default)]
+//!     pub c: Vec<i32>,
+//! }
+//!
+//! fn default_b() -> String {
+//!     "default".to_string()
+//! }
+//!
+//! fn use_it() {
+//!     let x = ComplexTypewithDefault::default();
+//!
+//!     assert_eq!(x.b, "default");
+//! }
+//! ````
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::box_collection)]
