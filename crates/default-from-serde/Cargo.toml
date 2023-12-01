@@ -1,0 +1,13 @@
+[package]
+authors     = ["강동윤 <kdy1997.dev@gmail.com>"]
+description = "Derive default using `#[serde(default)]`"
+edition     = "2021"
+license     = "Apache-2.0"
+name        = "default-from-serde"
+repository  = "https://github.com/dudykr/ddbase.git"
+version     = "0.1.0"
+
+[lib]
+proc-macro = true
+
+[dependencies]
