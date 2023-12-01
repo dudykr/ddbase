@@ -331,13 +331,7 @@ impl<'de> VariantAccess<'de> for VariantDeserializer {
     where
         T: DeserializeSeed<'de>,
     {
-        match self.value {
-            Some(value) => seed.deserialize(value),
-            None => Err(serde::de::Error::invalid_type(
-                Unexpected::UnitVariant,
-                &"newtype variant",
-            )),
-        }
+        seed.deserialize(DefaultDeserializer)
     }
 
     fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value, Error>
