@@ -6,12 +6,13 @@
 //!
 //! ```
 //! use default_from_serde::SerdeDefault;
+//! # use serde_derive::Deserialize;
 //!
-//! #[derive(SerdeDefault)]
+//! #[derive(SerdeDefault, Deserialize)]
 //! pub struct ComplexTypewithDefault {
 //!     #[serde(default)]
 //!     pub a: i32,
-//!     #[serde(defaul = "default_b")]
+//!     #[serde(default = "default_b")]
 //!     pub b: String,
 //!     #[serde(default)]
 //!     pub c: Vec<i32>,
@@ -39,6 +40,7 @@ use std::fmt::Display;
 #[cfg(feature = "std")]
 use std::{borrow::ToOwned, string::String};
 
+pub use derive_default_from_serde::SerdeDefault;
 use serde::{
     de::{
         self, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, Unexpected,
