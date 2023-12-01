@@ -1,4 +1,5 @@
 use core::fmt;
+use std::fmt::Display;
 #[cfg(feature = "std")]
 use std::{
     borrow::{Cow, ToOwned},
@@ -31,7 +32,25 @@ pub struct DefaultDeserializer;
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 
 #[derive(Debug, Clone)]
-pub struct Error;
+pub struct Error(Box<String>);
+
+impl Display for Error {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl serde::de::Error for Error {}
+
+impl serde::de::StdError for Error {
+    #[cfg(feature = "std")]
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match &self.err.code {
+            ErrorCode::Io(err) => err.source(),
+            _ => None,
+        }
+    }
+}
 
 macro_rules! deserialize_number {
     ($method:ident) => {
