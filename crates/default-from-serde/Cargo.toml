@@ -7,6 +7,9 @@ name        = "default-from-serde"
 repository  = "https://github.com/dudykr/ddbase.git"
 version     = "0.1.0"
 
+[lib]
+std = ["serde/std"]
+
 [dependencies]
 derive-default-from-serde = { workspace = true }
 serde                     = { version = "1", default-features = false }
