@@ -1,3 +1,46 @@
+use serde::{de::Visitor, Deserializer};
+
+use crate::Error;
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct Number;
+
+macro_rules! deserialize_any {
+    (@expand [$($num_string:tt)*]) => {
+        #[inline]
+        fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Error>
+        where
+            V: Visitor<'de>,
+        {
+            match self.n {
+                N::PosInt(u) => visitor.visit_u64(u),
+                N::NegInt(i) => visitor.visit_i64(i),
+                N::Float(f) => visitor.visit_f64(f),
+            }
+        }
+
+    };
+
+    (owned) => {
+        deserialize_any!(@expand [n]);
+    };
+
+    (ref) => {
+        deserialize_any!(@expand [n.clone()]);
+    };
+}
+
+macro_rules! deserialize_number {
+    ($deserialize:ident => $visit:ident) => {
+        fn $deserialize<V>(self, visitor: V) -> Result<V::Value, Error>
+        where
+            V: Visitor<'de>,
+        {
+            self.deserialize_any(visitor)
+        }
+    };
+}
+
 impl<'de> Deserializer<'de> for Number {
     type Error = Error;
 
