@@ -9,8 +9,8 @@ use std::{
 
 use serde::{
     de::{
-        self, Deserialize, DeserializeSeed, EnumAccess, Expected, IntoDeserializer, MapAccess,
-        SeqAccess, Unexpected, VariantAccess, Visitor,
+        self, DeserializeSeed, EnumAccess, Expected, IntoDeserializer, MapAccess, SeqAccess,
+        Unexpected, VariantAccess, Visitor,
     },
     forward_to_deserialize_any,
 };
@@ -40,7 +40,14 @@ impl Display for Error {
     }
 }
 
-impl serde::de::Error for Error {}
+impl serde::de::Error for Error {
+    fn custom<T>(msg: T) -> Self
+    where
+        T: Display,
+    {
+        Error(Box::new(msg.to_string()))
+    }
+}
 
 impl serde::de::StdError for Error {
     #[cfg(feature = "std")]
@@ -58,7 +65,7 @@ macro_rules! deserialize_number {
         where
             V: Visitor<'de>,
         {
-            0f32.deserialize_any(visitor)
+            Number.deserialize_any(visitor)
         }
     };
 }
@@ -69,15 +76,8 @@ where
 {
     let mut deserializer = SeqDeserializer;
     let seq = tri!(visitor.visit_seq(&mut deserializer));
-    let remaining = deserializer.iter.len();
-    if remaining == 0 {
-        Ok(seq)
-    } else {
-        Err(serde::de::Error::invalid_length(
-            0,
-            &"fewer elements in array",
-        ))
-    }
+
+    Ok(seq)
 }
 
 fn visit_object<'de, V>(visitor: V) -> Result<V::Value, Error>
@@ -86,15 +86,8 @@ where
 {
     let mut deserializer = MapDeserializer;
     let map = tri!(visitor.visit_map(&mut deserializer));
-    let remaining = deserializer.iter.len();
-    if remaining == 0 {
-        Ok(map)
-    } else {
-        Err(serde::de::Error::invalid_length(
-            0,
-            &"fewer elements in map",
-        ))
-    }
+
+    Ok(map)
 }
 
 impl<'de> serde::Deserializer<'de> for DefaultDeserializer {
@@ -411,20 +404,6 @@ impl<'de> MapAccess<'de> for MapDeserializer {
     fn size_hint(&self) -> Option<usize> {
         Some(0)
     }
-}
-
-macro_rules! deserialize_value_ref_number {
-    ($method:ident) => {
-        fn $method<V>(self, visitor: V) -> Result<V::Value, Error>
-        where
-            V: Visitor<'de>,
-        {
-            match self {
-                Value::Number(n) => n.deserialize_any(visitor),
-                _ => Err(self.invalid_type(&visitor)),
-            }
-        }
-    };
 }
 
 struct KeyClassifier;
