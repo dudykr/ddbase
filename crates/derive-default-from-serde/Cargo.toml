@@ -5,7 +5,7 @@ edition     = "2021"
 license     = "Apache-2.0"
 name        = "derive-default-from-serde"
 repository  = "https://github.com/dudykr/ddbase.git"
-version     = "0.1.0"
+version     = "0.1.1"
 
 [lib]
 proc-macro = true
