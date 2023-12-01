@@ -15,6 +15,8 @@ use serde::{
     forward_to_deserialize_any,
 };
 
+use crate::number::Number;
+
 mod number;
 
 // We only use our own error type; no need for From conversions provided by the
@@ -165,7 +167,7 @@ impl<'de> serde::Deserializer<'de> for DefaultDeserializer {
     where
         V: Visitor<'de>,
     {
-        visitor.visit_bool(false)
+        visitor.visit_unit()
     }
 
     fn deserialize_char<V>(self, visitor: V) -> Result<V::Value, Error>
@@ -186,11 +188,7 @@ impl<'de> serde::Deserializer<'de> for DefaultDeserializer {
     where
         V: Visitor<'de>,
     {
-        match self {
-            #[cfg(any(feature = "std", feature = "alloc"))]
-            Value::String(v) => visitor.visit_string(v),
-            _ => Err(self.invalid_type(&visitor)),
-        }
+        visitor.visit_unit()
     }
 
     fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, Error>
@@ -283,7 +281,6 @@ impl<'de> serde::Deserializer<'de> for DefaultDeserializer {
     where
         V: Visitor<'de>,
     {
-        drop(self);
         visitor.visit_unit()
     }
 }

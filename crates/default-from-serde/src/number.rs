@@ -1,4 +1,4 @@
-use serde::{de::Visitor, Deserializer};
+use serde::{de::Visitor, forward_to_deserialize_any, Deserializer};
 
 use crate::Error;
 
@@ -12,11 +12,7 @@ macro_rules! deserialize_any {
         where
             V: Visitor<'de>,
         {
-            match self.n {
-                N::PosInt(u) => visitor.visit_u64(u),
-                N::NegInt(i) => visitor.visit_i64(i),
-                N::Float(f) => visitor.visit_f64(f),
-            }
+            visitor.visit_unit()
         }
 
     };
