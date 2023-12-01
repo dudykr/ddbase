@@ -132,37 +132,7 @@ impl<'de> de::Deserializer<'de> for DefaultDeserializer {
     where
         V: Visitor<'de>,
     {
-        let (variant, value) = match self {
-            Value::Object(value) => {
-                let mut iter = value.into_iter();
-                let (variant, value) = match iter.next() {
-                    Some(v) => v,
-                    None => {
-                        return Err(serde::de::Error::invalid_value(
-                            Unexpected::Map,
-                            &"map with a single key",
-                        ));
-                    }
-                };
-                // enums are encoded in json as maps with a single key:value pair
-                if iter.next().is_some() {
-                    return Err(serde::de::Error::invalid_value(
-                        Unexpected::Map,
-                        &"map with a single key",
-                    ));
-                }
-                (variant, Some(value))
-            }
-            Value::String(variant) => (variant, None),
-            other => {
-                return Err(serde::de::Error::invalid_type(
-                    other.unexpected(),
-                    &"string or map",
-                ));
-            }
-        };
-
-        visitor.visit_enum(EnumDeserializer { variant, value })
+        visitor.visit_enum(DeImpl)
     }
 
     #[inline]
@@ -221,12 +191,7 @@ impl<'de> de::Deserializer<'de> for DefaultDeserializer {
     where
         V: Visitor<'de>,
     {
-        match self {
-            #[cfg(any(feature = "std", feature = "alloc"))]
-            Value::String(v) => visitor.visit_string(v),
-            Value::Array(v) => visit_array(visitor),
-            _ => Err(self.invalid_type(&visitor)),
-        }
+        visit_array(visitor)
     }
 
     fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value, Error>
@@ -357,23 +322,7 @@ impl<'de> VariantAccess<'de> for DeImpl {
     where
         V: Visitor<'de>,
     {
-        match self.value {
-            Some(Value::Array(v)) => {
-                if v.is_empty() {
-                    visitor.visit_unit()
-                } else {
-                    visit_array(visitor)
-                }
-            }
-            Some(other) => Err(serde::de::Error::invalid_type(
-                other.unexpected(),
-                &"tuple variant",
-            )),
-            None => Err(serde::de::Error::invalid_type(
-                Unexpected::UnitVariant,
-                &"tuple variant",
-            )),
-        }
+        visit_array(visitor)
     }
 
     fn struct_variant<V>(
@@ -384,17 +333,7 @@ impl<'de> VariantAccess<'de> for DeImpl {
     where
         V: Visitor<'de>,
     {
-        match self.value {
-            Some(Value::Object(v)) => visit_object(visitor),
-            Some(other) => Err(serde::de::Error::invalid_type(
-                other.unexpected(),
-                &"struct variant",
-            )),
-            None => Err(serde::de::Error::invalid_type(
-                Unexpected::UnitVariant,
-                &"struct variant",
-            )),
-        }
+        visit_object(visitor)
     }
 }
 
