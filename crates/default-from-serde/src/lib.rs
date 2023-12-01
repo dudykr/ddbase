@@ -568,109 +568,6 @@ impl<'de> EnumAccess<'de> for EnumRefDeserializer {
     }
 }
 
-struct VariantRefDeserializer<'de> {
-    value: Option<&'de Value>,
-}
-
-impl<'de> VariantAccess<'de> for VariantRefDeserializer<'de> {
-    type Error = Error;
-
-    fn unit_variant(self) -> Result<(), Error> {
-        match self.value {
-            Some(value) => Deserialize::deserialize(value),
-            None => Ok(()),
-        }
-    }
-
-    fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value, Error>
-    where
-        T: DeserializeSeed<'de>,
-    {
-        match self.value {
-            Some(value) => seed.deserialize(value),
-            None => Err(serde::de::Error::invalid_type(
-                Unexpected::UnitVariant,
-                &"newtype variant",
-            )),
-        }
-    }
-
-    fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value, Error>
-    where
-        V: Visitor<'de>,
-    {
-        match self.value {
-            Some(Value::Array(v)) => {
-                if v.is_empty() {
-                    visitor.visit_unit()
-                } else {
-                    visit_array_ref(v, visitor)
-                }
-            }
-            Some(other) => Err(serde::de::Error::invalid_type(
-                other.unexpected(),
-                &"tuple variant",
-            )),
-            None => Err(serde::de::Error::invalid_type(
-                Unexpected::UnitVariant,
-                &"tuple variant",
-            )),
-        }
-    }
-
-    fn struct_variant<V>(
-        self,
-        _fields: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, Error>
-    where
-        V: Visitor<'de>,
-    {
-        match self.value {
-            Some(Value::Object(v)) => visit_object_ref(v, visitor),
-            Some(other) => Err(serde::de::Error::invalid_type(
-                other.unexpected(),
-                &"struct variant",
-            )),
-            None => Err(serde::de::Error::invalid_type(
-                Unexpected::UnitVariant,
-                &"struct variant",
-            )),
-        }
-    }
-}
-
-struct SeqRefDeserializer<'de> {
-    iter: slice::Iter<'de, Value>,
-}
-
-impl<'de> SeqRefDeserializer<'de> {
-    fn new(slice: &'de [Value]) -> Self {
-        SeqRefDeserializer { iter: slice.iter() }
-    }
-}
-
-impl<'de> SeqAccess<'de> for SeqRefDeserializer<'de> {
-    type Error = Error;
-
-    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Error>
-    where
-        T: DeserializeSeed<'de>,
-    {
-        match self.iter.next() {
-            Some(value) => seed.deserialize(value).map(Some),
-            None => Ok(None),
-        }
-    }
-
-    fn size_hint(&self) -> Option<usize> {
-        match self.iter.size_hint() {
-            (lower, Some(upper)) if lower == upper => Some(upper),
-            _ => None,
-        }
-    }
-}
-
 struct KeyClassifier;
 
 enum KeyClass {
@@ -727,7 +624,7 @@ impl<'de> Visitor<'de> for KeyClassifier {
     }
 }
 
-impl Value {
+impl DefaultDeserializer {
     #[cold]
     fn invalid_type<E>(&self, exp: &dyn Expected) -> E
     where
@@ -738,14 +635,7 @@ impl Value {
 
     #[cold]
     fn unexpected(&self) -> Unexpected {
-        match self {
-            Value::Null => Unexpected::Unit,
-            Value::Bool(b) => Unexpected::Bool(*b),
-            Value::Number(n) => n.unexpected(),
-            Value::String(s) => Unexpected::Str(s),
-            Value::Array(_) => Unexpected::Seq,
-            Value::Object(_) => Unexpected::Map,
-        }
+        Unexpected::Unit
     }
 }
 
