@@ -22,7 +22,7 @@
 //!     "default".to_string()
 //! }
 //!
-//! fn use_it() {
+//! fn main() {
 //!     let x = ComplexTypewithDefault::default();
 //!
 //!     assert_eq!(x.b, "default");
