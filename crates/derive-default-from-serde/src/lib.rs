@@ -7,6 +7,13 @@ use syn::{parse_macro_input, DeriveInput};
 #[proc_macro_derive(SerdeDefault)]
 pub fn derive_default_from_serde(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
+
+    match &input.data {
+        syn::Data::Struct(_) => {}
+        syn::Data::Enum(_) => panic!("Enum is not supported"),
+        syn::Data::Union(_) => panic!("Union is not supported"),
+    }
+
     let name = input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
