@@ -15,6 +15,8 @@ use serde::{
     forward_to_deserialize_any,
 };
 
+mod number;
+
 // We only use our own error type; no need for From conversions provided by the
 // standard library's try! macro. This reduces lines of LLVM IR by 4%.
 macro_rules! tri {
@@ -122,10 +124,7 @@ impl<'de> serde::Deserializer<'de> for DefaultDeserializer {
     where
         V: Visitor<'de>,
     {
-        match self {
-            Value::Array(v) => visit_array(visitor),
-            Value::Object(v) => visit_object(visitor),
-        }
+        visit_array(visitor)
     }
 
     #[inline]
@@ -205,12 +204,7 @@ impl<'de> serde::Deserializer<'de> for DefaultDeserializer {
     where
         V: Visitor<'de>,
     {
-        match self {
-            #[cfg(any(feature = "std", feature = "alloc"))]
-            Value::String(v) => visitor.visit_string(v),
-            Value::Array(v) => visit_array(visitor),
-            _ => Err(self.invalid_type(&visitor)),
-        }
+        visit_array(visitor)
     }
 
     fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value, Error>
