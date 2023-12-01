@@ -1,3 +1,32 @@
+//! This crate provides a derive macro named `SerdeDefault` which derives
+//! `Default` from `serde::Deserialize`.
+//!
+//! # Usage
+//1 ```
+//1 use default_from_serde::SerdeDefault;
+//1
+//1 #[derive(SerdeDefault)]
+//1 pub struct ComplexTypewithDefault {
+//1     #[serde(default)]
+//1     pub a: i32,
+//1     #[serde(defaul = "default_b")]
+//1     pub b: String,
+//1     #[serde(default)]
+//1     pub c: Vec<i32>,
+//1 }
+//1
+//1 fn default_b() -> String {
+//1     "default".to_string()
+//1 }
+//1
+//1 fn use_it() {
+//1     let x = ComplexTypewithDefault::default();
+//1
+//1     assert_eq!(x.b, "default");
+//1 }
+//1
+//1 ````
+
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::box_collection)]
 
