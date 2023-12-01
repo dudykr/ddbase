@@ -1,4 +1,4 @@
-use core::{fmt, slice, str::FromStr};
+use core::fmt;
 #[cfg(feature = "std")]
 use std::{
     borrow::{Cow, ToOwned},
@@ -332,23 +332,7 @@ impl<'de> VariantAccess<'de> for VariantDeserializer {
     where
         V: Visitor<'de>,
     {
-        match self.value {
-            Some(Value::Array(v)) => {
-                if v.is_empty() {
-                    visitor.visit_unit()
-                } else {
-                    visit_array(visitor)
-                }
-            }
-            Some(other) => Err(serde::de::Error::invalid_type(
-                other.unexpected(),
-                &"tuple variant",
-            )),
-            None => Err(serde::de::Error::invalid_type(
-                Unexpected::UnitVariant,
-                &"tuple variant",
-            )),
-        }
+        visitor.visit_unit()
     }
 
     fn struct_variant<V>(
@@ -359,17 +343,7 @@ impl<'de> VariantAccess<'de> for VariantDeserializer {
     where
         V: Visitor<'de>,
     {
-        match self.value {
-            Some(Value::Object(v)) => visit_object(visitor),
-            Some(other) => Err(serde::de::Error::invalid_type(
-                other.unexpected(),
-                &"struct variant",
-            )),
-            None => Err(serde::de::Error::invalid_type(
-                Unexpected::UnitVariant,
-                &"struct variant",
-            )),
-        }
+        visit_object(visitor)
     }
 }
 
