@@ -39,10 +39,7 @@ macro_rules! deserialize_number {
         where
             V: Visitor<'de>,
         {
-            match self {
-                Value::Number(n) => n.deserialize_any(visitor),
-                _ => Err(self.invalid_type(&visitor)),
-            }
+            0f32.deserialize_any(visitor)
         }
     };
 }
@@ -149,15 +146,6 @@ impl<'de> serde::Deserializer<'de> for DefaultDeserializer {
     where
         V: Visitor<'de>,
     {
-        #[cfg(feature = "raw_value")]
-        {
-            if name == crate::raw::TOKEN {
-                return visitor.visit_map(crate::raw::OwnedRawDeserializer {
-                    raw_value: Some(self.to_string()),
-                });
-            }
-        }
-
         let _ = name;
         visitor.visit_newtype_struct(self)
     }
@@ -166,10 +154,7 @@ impl<'de> serde::Deserializer<'de> for DefaultDeserializer {
     where
         V: Visitor<'de>,
     {
-        match self {
-            Value::Bool(v) => visitor.visit_bool(v),
-            _ => Err(self.invalid_type(&visitor)),
-        }
+        visitor.visit_bool(false)
     }
 
     fn deserialize_char<V>(self, visitor: V) -> Result<V::Value, Error>
@@ -266,16 +251,18 @@ impl<'de> serde::Deserializer<'de> for DefaultDeserializer {
     fn deserialize_struct<V>(
         self,
         _name: &'static str,
-        _fields: &'static [&'static str],
+        fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Error>
     where
         V: Visitor<'de>,
     {
-        match self {
-            Value::Array(v) => visit_array(visitor),
-            Value::Object(v) => visit_object(visitor),
-            _ => Err(self.invalid_type(&visitor)),
+        if fields.is_empty() {
+            visit_object(visitor)
+        } else if fields.iter().any(|f| f.starts_with('0')) {
+            visit_array(visitor)
+        } else {
+            visit_object(visitor)
         }
     }
 
@@ -435,7 +422,6 @@ impl<'de> MapAccess<'de> for MapDeserializer {
 
 macro_rules! deserialize_value_ref_number {
     ($method:ident) => {
-        #[cfg(not(feature = "arbitrary_precision"))]
         fn $method<V>(self, visitor: V) -> Result<V::Value, Error>
         where
             V: Visitor<'de>,
@@ -443,17 +429,6 @@ macro_rules! deserialize_value_ref_number {
             match self {
                 Value::Number(n) => n.deserialize_any(visitor),
                 _ => Err(self.invalid_type(&visitor)),
-            }
-        }
-
-        #[cfg(feature = "arbitrary_precision")]
-        fn $method<V>(self, visitor: V) -> Result<V::Value, Error>
-        where
-            V: Visitor<'de>,
-        {
-            match self {
-                Value::Number(n) => n.$method(visitor),
-                _ => self.deserialize_any(visitor),
             }
         }
     };
@@ -465,8 +440,6 @@ enum KeyClass {
     Map(String),
     #[cfg(feature = "arbitrary_precision")]
     Number,
-    #[cfg(feature = "raw_value")]
-    RawValue,
 }
 
 impl<'de> DeserializeSeed<'de> for KeyClassifier {
@@ -492,10 +465,6 @@ impl<'de> Visitor<'de> for KeyClassifier {
         E: de::Error,
     {
         match s {
-            #[cfg(feature = "arbitrary_precision")]
-            crate::number::TOKEN => Ok(KeyClass::Number),
-            #[cfg(feature = "raw_value")]
-            crate::raw::TOKEN => Ok(KeyClass::RawValue),
             _ => Ok(KeyClass::Map(s.to_owned())),
         }
     }
@@ -506,10 +475,6 @@ impl<'de> Visitor<'de> for KeyClassifier {
         E: de::Error,
     {
         match s.as_str() {
-            #[cfg(feature = "arbitrary_precision")]
-            crate::number::TOKEN => Ok(KeyClass::Number),
-            #[cfg(feature = "raw_value")]
-            crate::raw::TOKEN => Ok(KeyClass::RawValue),
             _ => Ok(KeyClass::Map(s)),
         }
     }
