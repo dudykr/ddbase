@@ -1,9 +1,10 @@
-use alloc::{
+use core::{fmt, slice, str::FromStr};
+#[cfg(feature = "std")]
+use std::{
     borrow::{Cow, ToOwned},
     string::String,
     vec::{self, Vec},
 };
-use core::{fmt, slice, str::FromStr};
 
 use serde::{
     de::{
@@ -51,7 +52,7 @@ where
     V: Visitor<'de>,
 {
     let len = array.len();
-    let mut deserializer = SeqDeserializer::new(array);
+    let mut deserializer = SeqDeserializer;
     let seq = tri!(visitor.visit_seq(&mut deserializer));
     let remaining = deserializer.iter.len();
     if remaining == 0 {
@@ -69,7 +70,7 @@ where
     V: Visitor<'de>,
 {
     let len = object.len();
-    let mut deserializer = MapDeserializer::new(object);
+    let mut deserializer = MapDeserializer;
     let map = tri!(visitor.visit_map(&mut deserializer));
     let remaining = deserializer.iter.len();
     if remaining == 0 {
@@ -115,11 +116,6 @@ impl<'de> serde::Deserializer<'de> for Value {
         V: Visitor<'de>,
     {
         match self {
-            Value::Null => visitor.visit_unit(),
-            Value::Bool(v) => visitor.visit_bool(v),
-            Value::Number(n) => n.deserialize_any(visitor),
-            #[cfg(any(feature = "std", feature = "alloc"))]
-            Value::String(v) => visitor.visit_string(v),
             Value::Array(v) => visit_array(v, visitor),
             Value::Object(v) => visit_object(v, visitor),
         }
@@ -130,10 +126,7 @@ impl<'de> serde::Deserializer<'de> for Value {
     where
         V: Visitor<'de>,
     {
-        match self {
-            Value::Null => visitor.visit_none(),
-            _ => visitor.visit_some(self),
-        }
+        visitor.visit_none()
     }
 
     #[inline]
@@ -450,17 +443,7 @@ impl<'de> VariantAccess<'de> for VariantDeserializer {
     }
 }
 
-struct SeqDeserializer {
-    iter: vec::IntoIter<Value>,
-}
-
-impl SeqDeserializer {
-    fn new(vec: Vec<Value>) -> Self {
-        SeqDeserializer {
-            iter: vec.into_iter(),
-        }
-    }
-}
+struct SeqDeserializer;
 
 impl<'de> SeqAccess<'de> for SeqDeserializer {
     type Error = Error;
@@ -483,19 +466,7 @@ impl<'de> SeqAccess<'de> for SeqDeserializer {
     }
 }
 
-struct MapDeserializer {
-    iter: <Map<String, Value> as IntoIterator>::IntoIter,
-    value: Option<Value>,
-}
-
-impl MapDeserializer {
-    fn new(map: Map<String, Value>) -> Self {
-        MapDeserializer {
-            iter: map.into_iter(),
-            value: None,
-        }
-    }
-}
+struct MapDeserializer;
 
 impl<'de> MapAccess<'de> for MapDeserializer {
     type Error = Error;
@@ -971,17 +942,9 @@ impl Value {
     }
 }
 
-struct BorrowedCowStrDeserializer<'de> {
-    value: Cow<'de, str>,
-}
+struct BorrowedCowStrDeserializer;
 
-impl<'de> BorrowedCowStrDeserializer<'de> {
-    fn new(value: Cow<'de, str>) -> Self {
-        BorrowedCowStrDeserializer { value }
-    }
-}
-
-impl<'de> de::Deserializer<'de> for BorrowedCowStrDeserializer<'de> {
+impl<'de> de::Deserializer<'de> for BorrowedCowStrDeserializer {
     type Error = Error;
 
     forward_to_deserialize_any! {
@@ -994,11 +957,7 @@ impl<'de> de::Deserializer<'de> for BorrowedCowStrDeserializer<'de> {
     where
         V: de::Visitor<'de>,
     {
-        match self.value {
-            Cow::Borrowed(string) => visitor.visit_borrowed_str(string),
-            #[cfg(any(feature = "std", feature = "alloc"))]
-            Cow::Owned(string) => visitor.visit_string(string),
-        }
+        visitor.visit_borrowed_str("")
     }
 
     fn deserialize_enum<V>(
@@ -1014,7 +973,7 @@ impl<'de> de::Deserializer<'de> for BorrowedCowStrDeserializer<'de> {
     }
 }
 
-impl<'de> de::EnumAccess<'de> for BorrowedCowStrDeserializer<'de> {
+impl<'de> de::EnumAccess<'de> for BorrowedCowStrDeserializer {
     type Error = Error;
     type Variant = UnitOnly;
 
