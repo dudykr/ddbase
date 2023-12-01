@@ -1,7 +1,8 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+#[cfg(feature = "std")]
+use alloc::borrow::Cow;
 use core::fmt;
-use std::borrow::Cow;
 
 pub use derive_default_from_serde::SerdeDefault;
 use serde::{
@@ -27,7 +28,7 @@ macro_rules! tri {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DefaultDeserializer;
 
-pub type Result<T, E = Error> = std::result::Result<T, E>;
+pub type Result<T, E = Error> = core::result::Result<T, E>;
 
 #[derive(Debug, Clone)]
 pub struct Error;
