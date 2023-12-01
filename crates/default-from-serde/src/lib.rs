@@ -1,3 +1,5 @@
+use core::fmt;
+#[cfg(feature = "std")]
 use std::borrow::Cow;
 
 pub use derive_default_from_serde::SerdeDefault;
@@ -227,10 +229,7 @@ impl<'de> de::Deserializer<'de> for DefaultDeserializer {
     where
         V: Visitor<'de>,
     {
-        match self {
-            Value::Null => visitor.visit_unit(),
-            _ => Err(self.invalid_type(&visitor)),
-        }
+        visitor.visit_unit()
     }
 
     fn deserialize_unit_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value, Error>
@@ -244,10 +243,7 @@ impl<'de> de::Deserializer<'de> for DefaultDeserializer {
     where
         V: Visitor<'de>,
     {
-        match self {
-            Value::Array(v) => visit_array(visitor),
-            _ => Err(self.invalid_type(&visitor)),
-        }
+        visit_array(visitor)
     }
 
     fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value, Error>
