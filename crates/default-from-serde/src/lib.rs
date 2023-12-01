@@ -304,7 +304,7 @@ impl<'de> EnumAccess<'de> for EnumDeserializer {
     where
         V: DeserializeSeed<'de>,
     {
-        let variant = self.variant.into_deserializer();
+        let variant = DefaultDeserializer;
         let visitor = VariantDeserializer;
         seed.deserialize(variant).map(|v| (v, visitor))
     }
@@ -368,17 +368,11 @@ impl<'de> SeqAccess<'de> for SeqDeserializer {
     where
         T: DeserializeSeed<'de>,
     {
-        match self.iter.next() {
-            Some(value) => seed.deserialize(value).map(Some),
-            None => Ok(None),
-        }
+        Ok(None)
     }
 
     fn size_hint(&self) -> Option<usize> {
-        match self.iter.size_hint() {
-            (lower, Some(upper)) if lower == upper => Some(upper),
-            _ => None,
-        }
+        Some(0)
     }
 }
 
