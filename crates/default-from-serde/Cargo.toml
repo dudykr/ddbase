@@ -7,7 +7,7 @@ name        = "default-from-serde"
 repository  = "https://github.com/dudykr/ddbase.git"
 version     = "0.1.0"
 
-[lib]
+[features]
 default = ["std"]
 std     = ["serde/std"]
 
