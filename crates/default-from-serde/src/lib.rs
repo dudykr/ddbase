@@ -137,37 +137,7 @@ impl<'de> serde::Deserializer<'de> for DefaultDeserializer {
     where
         V: Visitor<'de>,
     {
-        let (variant, value) = match self {
-            Value::Object(value) => {
-                let mut iter = value.into_iter();
-                let (variant, value) = match iter.next() {
-                    Some(v) => v,
-                    None => {
-                        return Err(serde::de::Error::invalid_value(
-                            Unexpected::Map,
-                            &"map with a single key",
-                        ));
-                    }
-                };
-                // enums are encoded in json as maps with a single key:value pair
-                if iter.next().is_some() {
-                    return Err(serde::de::Error::invalid_value(
-                        Unexpected::Map,
-                        &"map with a single key",
-                    ));
-                }
-                (variant, Some(value))
-            }
-            Value::String(variant) => (variant, None),
-            other => {
-                return Err(serde::de::Error::invalid_type(
-                    other.unexpected(),
-                    &"string or map",
-                ));
-            }
-        };
-
-        visitor.visit_enum(EnumDeserializer { variant, value })
+        visitor.visit_enum(EnumDeserializer)
     }
 
     #[inline]
@@ -250,10 +220,7 @@ impl<'de> serde::Deserializer<'de> for DefaultDeserializer {
     where
         V: Visitor<'de>,
     {
-        match self {
-            Value::Null => visitor.visit_unit(),
-            _ => Err(self.invalid_type(&visitor)),
-        }
+        visitor.visit_unit()
     }
 
     fn deserialize_unit_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value, Error>
@@ -267,10 +234,7 @@ impl<'de> serde::Deserializer<'de> for DefaultDeserializer {
     where
         V: Visitor<'de>,
     {
-        match self {
-            Value::Array(v) => visit_array(visitor),
-            _ => Err(self.invalid_type(&visitor)),
-        }
+        visit_array(visitor)
     }
 
     fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value, Error>
@@ -296,10 +260,7 @@ impl<'de> serde::Deserializer<'de> for DefaultDeserializer {
     where
         V: Visitor<'de>,
     {
-        match self {
-            Value::Object(v) => visit_object(visitor),
-            _ => Err(self.invalid_type(&visitor)),
-        }
+        visit_object(visitor)
     }
 
     fn deserialize_struct<V>(
@@ -334,10 +295,7 @@ impl<'de> serde::Deserializer<'de> for DefaultDeserializer {
     }
 }
 
-struct EnumDeserializer {
-    variant: String,
-    value: Option<Value>,
-}
+struct EnumDeserializer;
 
 impl<'de> EnumAccess<'de> for EnumDeserializer {
     type Error = Error;
@@ -348,7 +306,7 @@ impl<'de> EnumAccess<'de> for EnumDeserializer {
         V: DeserializeSeed<'de>,
     {
         let variant = self.variant.into_deserializer();
-        let visitor = VariantDeserializer { value: self.value };
+        let visitor = VariantDeserializer;
         seed.deserialize(variant).map(|v| (v, visitor))
     }
 }
@@ -460,33 +418,18 @@ impl<'de> MapAccess<'de> for MapDeserializer {
     where
         T: DeserializeSeed<'de>,
     {
-        match self.iter.next() {
-            Some((key, value)) => {
-                self.value = Some(value);
-                let key_de = MapKeyDeserializer {
-                    key: Cow::Owned(key),
-                };
-                seed.deserialize(key_de).map(Some)
-            }
-            None => Ok(None),
-        }
+        Ok(None)
     }
 
     fn next_value_seed<T>(&mut self, seed: T) -> Result<T::Value, Error>
     where
         T: DeserializeSeed<'de>,
     {
-        match self.value.take() {
-            Some(value) => seed.deserialize(value),
-            None => Err(serde::de::Error::custom("value is missing")),
-        }
+        Err(serde::de::Error::custom("value is missing"))
     }
 
     fn size_hint(&self) -> Option<usize> {
-        match self.iter.size_hint() {
-            (lower, Some(upper)) if lower == upper => Some(upper),
-            _ => None,
-        }
+        Some(0)
     }
 }
 
@@ -514,42 +457,6 @@ macro_rules! deserialize_value_ref_number {
             }
         }
     };
-}
-
-fn visit_array_ref<'de, V>(array: &'de [Value], visitor: V) -> Result<V::Value, Error>
-where
-    V: Visitor<'de>,
-{
-    let len = array.len();
-    let mut deserializer = SeqRefDeserializer::new(array);
-    let seq = tri!(visitor.visit_seq(&mut deserializer));
-    let remaining = deserializer.iter.len();
-    if remaining == 0 {
-        Ok(seq)
-    } else {
-        Err(serde::de::Error::invalid_length(
-            len,
-            &"fewer elements in array",
-        ))
-    }
-}
-
-fn visit_object_ref<'de, V>(object: &'de Map<String, Value>, visitor: V) -> Result<V::Value, Error>
-where
-    V: Visitor<'de>,
-{
-    let len = object.len();
-    let mut deserializer = MapRefDeserializer::new(object);
-    let map = tri!(visitor.visit_map(&mut deserializer));
-    let remaining = deserializer.iter.len();
-    if remaining == 0 {
-        Ok(map)
-    } else {
-        Err(serde::de::Error::invalid_length(
-            len,
-            &"fewer elements in map",
-        ))
-    }
 }
 
 struct KeyClassifier;
