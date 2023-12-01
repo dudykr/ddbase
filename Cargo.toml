@@ -6,3 +6,7 @@ members = [
     "xtask",
 ]
 resolver = "2"
+
+
+    [workspace.dependencies]
+    derive-default-from-serde = { path = "./crates/derive-default-from-serde" }

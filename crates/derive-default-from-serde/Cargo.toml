@@ -3,9 +3,14 @@ authors     = ["강동윤 <kdy1997.dev@gmail.com>"]
 description = "Derive default using `#[serde(default)]`"
 edition     = "2021"
 license     = "Apache-2.0"
-name        = "default-from-serde"
+name        = "derive-default-from-serde"
 repository  = "https://github.com/dudykr/ddbase.git"
 version     = "0.1.0"
 
+[lib]
+proc-macro = true
+
 [dependencies]
-derive-default-from-serde = { workspace = true }
+proc-macro2 = "1.0.70"
+quote       = "1.0.33"
+syn         = "2.0.39"
