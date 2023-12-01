@@ -268,6 +268,7 @@ version = "0.1.0"
 dependencies = [
  "derive-default-from-serde",
  "serde",
+ "serde_derive",
 ]
 
 [[package]]
