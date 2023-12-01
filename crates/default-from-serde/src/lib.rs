@@ -1,16 +1,18 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+#![allow(clippy::box_collection)]
+
 use core::fmt;
+#[cfg(feature = "std")]
+use std::error;
 use std::fmt::Display;
 #[cfg(feature = "std")]
-use std::{
-    borrow::{Cow, ToOwned},
-    string::String,
-    vec::{self, Vec},
-};
+#[cfg(feature = "std")]
+use std::{borrow::ToOwned, string::String};
 
 use serde::{
     de::{
-        self, DeserializeSeed, EnumAccess, Expected, IntoDeserializer, MapAccess, SeqAccess,
-        Unexpected, VariantAccess, Visitor,
+        self, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, Unexpected,
+        VariantAccess, Visitor,
     },
     forward_to_deserialize_any,
 };
@@ -56,10 +58,7 @@ impl serde::de::Error for Error {
 impl serde::de::StdError for Error {
     #[cfg(feature = "std")]
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        match &self.err.code {
-            ErrorCode::Io(err) => err.source(),
-            _ => None,
-        }
+        None
     }
 }
 
@@ -349,7 +348,7 @@ struct SeqDeserializer;
 impl<'de> SeqAccess<'de> for SeqDeserializer {
     type Error = Error;
 
-    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Error>
+    fn next_element_seed<T>(&mut self, _: T) -> Result<Option<T::Value>, Error>
     where
         T: DeserializeSeed<'de>,
     {
@@ -366,14 +365,14 @@ struct MapDeserializer;
 impl<'de> MapAccess<'de> for MapDeserializer {
     type Error = Error;
 
-    fn next_key_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Error>
+    fn next_key_seed<T>(&mut self, _: T) -> Result<Option<T::Value>, Error>
     where
         T: DeserializeSeed<'de>,
     {
         Ok(None)
     }
 
-    fn next_value_seed<T>(&mut self, seed: T) -> Result<T::Value, Error>
+    fn next_value_seed<T>(&mut self, _: T) -> Result<T::Value, Error>
     where
         T: DeserializeSeed<'de>,
     {
@@ -415,9 +414,7 @@ impl<'de> Visitor<'de> for KeyClassifier {
     where
         E: de::Error,
     {
-        match s {
-            _ => Ok(KeyClass::Map(s.to_owned())),
-        }
+        Ok(KeyClass::Map(s.to_owned()))
     }
 
     #[cfg(any(feature = "std", feature = "alloc"))]
@@ -425,24 +422,7 @@ impl<'de> Visitor<'de> for KeyClassifier {
     where
         E: de::Error,
     {
-        match s.as_str() {
-            _ => Ok(KeyClass::Map(s)),
-        }
-    }
-}
-
-impl DefaultDeserializer {
-    #[cold]
-    fn invalid_type<E>(&self, exp: &dyn Expected) -> E
-    where
-        E: serde::de::Error,
-    {
-        serde::de::Error::invalid_type(self.unexpected(), exp)
-    }
-
-    #[cold]
-    fn unexpected(&self) -> Unexpected {
-        Unexpected::Unit
+        Ok(KeyClass::Map(s))
     }
 }
 
