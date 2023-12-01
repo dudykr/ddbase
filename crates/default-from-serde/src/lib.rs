@@ -47,11 +47,10 @@ macro_rules! deserialize_number {
     };
 }
 
-fn visit_array<'de, V>(array: Vec<Value>, visitor: V) -> Result<V::Value, Error>
+fn visit_array<'de, V>(visitor: V) -> Result<V::Value, Error>
 where
     V: Visitor<'de>,
 {
-    let len = array.len();
     let mut deserializer = SeqDeserializer;
     let seq = tri!(visitor.visit_seq(&mut deserializer));
     let remaining = deserializer.iter.len();
@@ -59,17 +58,16 @@ where
         Ok(seq)
     } else {
         Err(serde::de::Error::invalid_length(
-            len,
+            0,
             &"fewer elements in array",
         ))
     }
 }
 
-fn visit_object<'de, V>(object: Map<String, Value>, visitor: V) -> Result<V::Value, Error>
+fn visit_object<'de, V>(visitor: V) -> Result<V::Value, Error>
 where
     V: Visitor<'de>,
 {
-    let len = object.len();
     let mut deserializer = MapDeserializer;
     let map = tri!(visitor.visit_map(&mut deserializer));
     let remaining = deserializer.iter.len();
@@ -77,7 +75,7 @@ where
         Ok(map)
     } else {
         Err(serde::de::Error::invalid_length(
-            len,
+            0,
             &"fewer elements in map",
         ))
     }
@@ -116,8 +114,8 @@ impl<'de> serde::Deserializer<'de> for Value {
         V: Visitor<'de>,
     {
         match self {
-            Value::Array(v) => visit_array(v, visitor),
-            Value::Object(v) => visit_object(v, visitor),
+            Value::Array(v) => visit_array(visitor),
+            Value::Object(v) => visit_object(visitor),
         }
     }
 
@@ -243,7 +241,7 @@ impl<'de> serde::Deserializer<'de> for Value {
         match self {
             #[cfg(any(feature = "std", feature = "alloc"))]
             Value::String(v) => visitor.visit_string(v),
-            Value::Array(v) => visit_array(v, visitor),
+            Value::Array(v) => visit_array(visitor),
             _ => Err(self.invalid_type(&visitor)),
         }
     }
@@ -270,7 +268,7 @@ impl<'de> serde::Deserializer<'de> for Value {
         V: Visitor<'de>,
     {
         match self {
-            Value::Array(v) => visit_array(v, visitor),
+            Value::Array(v) => visit_array(visitor),
             _ => Err(self.invalid_type(&visitor)),
         }
     }
@@ -299,7 +297,7 @@ impl<'de> serde::Deserializer<'de> for Value {
         V: Visitor<'de>,
     {
         match self {
-            Value::Object(v) => visit_object(v, visitor),
+            Value::Object(v) => visit_object(visitor),
             _ => Err(self.invalid_type(&visitor)),
         }
     }
@@ -314,8 +312,8 @@ impl<'de> serde::Deserializer<'de> for Value {
         V: Visitor<'de>,
     {
         match self {
-            Value::Array(v) => visit_array(v, visitor),
-            Value::Object(v) => visit_object(v, visitor),
+            Value::Array(v) => visit_array(visitor),
+            Value::Object(v) => visit_object(visitor),
             _ => Err(self.invalid_type(&visitor)),
         }
     }
@@ -363,26 +361,13 @@ impl<'de> IntoDeserializer<'de, Error> for Value {
     }
 }
 
-impl<'de> IntoDeserializer<'de, Error> for &'de Value {
-    type Deserializer = Self;
-
-    fn into_deserializer(self) -> Self::Deserializer {
-        self
-    }
-}
-
-struct VariantDeserializer {
-    value: Option<Value>,
-}
+struct VariantDeserializer;
 
 impl<'de> VariantAccess<'de> for VariantDeserializer {
     type Error = Error;
 
     fn unit_variant(self) -> Result<(), Error> {
-        match self.value {
-            Some(value) => Deserialize::deserialize(value),
-            None => Ok(()),
-        }
+        Ok(())
     }
 
     fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value, Error>
@@ -407,7 +392,7 @@ impl<'de> VariantAccess<'de> for VariantDeserializer {
                 if v.is_empty() {
                     visitor.visit_unit()
                 } else {
-                    visit_array(v, visitor)
+                    visit_array(visitor)
                 }
             }
             Some(other) => Err(serde::de::Error::invalid_type(
@@ -430,7 +415,7 @@ impl<'de> VariantAccess<'de> for VariantDeserializer {
         V: Visitor<'de>,
     {
         match self.value {
-            Some(Value::Object(v)) => visit_object(v, visitor),
+            Some(Value::Object(v)) => visit_object(visitor),
             Some(other) => Err(serde::de::Error::invalid_type(
                 other.unexpected(),
                 &"struct variant",
