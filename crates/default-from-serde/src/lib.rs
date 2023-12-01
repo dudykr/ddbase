@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
 use core::fmt;
 use std::borrow::Cow;
 
@@ -392,16 +394,7 @@ macro_rules! deserialize_numeric_key {
         {
             let mut de = crate::DefaultDeserializer::from_str(&self.key);
 
-            match tri!(de.peek()) {
-                Some(b'0'..=b'9' | b'-') => {}
-                _ => return Err(Error::syntax(ErrorCode::ExpectedNumericKey, 0, 0)),
-            }
-
             let number = tri!(de.$using(visitor));
-
-            if tri!(de.peek()).is_some() {
-                return Err(Error::syntax(ErrorCode::ExpectedNumericKey, 0, 0));
-            }
 
             Ok(number)
         }
