@@ -18,7 +18,22 @@ pub struct DefaultDeserializer;
 #[derive(Debug, Clone)]
 pub struct Error;
 
-impl<'de> de::Deserializer<'de> for Value {
+macro_rules! deserialize_number {
+    ($method:ident) => {
+        deserialize_number!($method, deserialize_number);
+    };
+
+    ($method:ident, $using:ident) => {
+        fn $method<V>(self, visitor: V) -> Result<V::Value>
+        where
+            V: de::Visitor<'de>,
+        {
+            self.$using(visitor)
+        }
+    };
+}
+
+impl<'de> de::Deserializer<'de> for DefaultDeserializer {
     type Error = Error;
 
     deserialize_number!(deserialize_i8);
