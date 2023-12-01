@@ -3,6 +3,7 @@ extern crate proc_macro;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
 
+/// Derive `Default` from `serde::Deserialize`.
 #[proc_macro_derive(SerdeDefault)]
 pub fn derive_default_from_serde(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
