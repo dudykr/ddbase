@@ -3,7 +3,7 @@ use std::borrow::Cow;
 pub use derive_default_from_serde::SerdeDefault;
 use serde::{
     de,
-    de::{Expected, Unexpected, Visitor},
+    de::{DeserializeSeed, Expected, MapAccess, SeqAccess, Unexpected, Visitor},
     forward_to_deserialize_any,
 };
 
@@ -44,7 +44,7 @@ where
     V: Visitor<'de>,
 {
     let len = array.len();
-    let mut deserializer = SeqDeserializer::new(array);
+    let mut deserializer = DeImpl::new(array);
     let seq = tri!(visitor.visit_seq(&mut deserializer));
     let remaining = deserializer.iter.len();
     if remaining == 0 {
@@ -62,7 +62,7 @@ where
     V: Visitor<'de>,
 {
     let len = object.len();
-    let mut deserializer = MapDeserializer::new(object);
+    let mut deserializer = DeImpl::new(object);
     let map = tri!(visitor.visit_map(&mut deserializer));
     let remaining = deserializer.iter.len();
     if remaining == 0 {
@@ -420,54 +420,24 @@ impl<'de> VariantAccess<'de> for VariantDeserializer {
     }
 }
 
-struct SeqDeserializer {
-    iter: vec::IntoIter<Value>,
-}
+struct DeImpl;
 
-impl SeqDeserializer {
-    fn new(vec: Vec<Value>) -> Self {
-        SeqDeserializer {
-            iter: vec.into_iter(),
-        }
-    }
-}
-
-impl<'de> SeqAccess<'de> for SeqDeserializer {
+impl<'de> SeqAccess<'de> for DeImpl {
     type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Error>
     where
         T: DeserializeSeed<'de>,
     {
-        match self.iter.next() {
-            Some(value) => seed.deserialize(value).map(Some),
-            None => Ok(None),
-        }
+        Ok(None)
     }
 
     fn size_hint(&self) -> Option<usize> {
-        match self.iter.size_hint() {
-            (lower, Some(upper)) if lower == upper => Some(upper),
-            _ => None,
-        }
+        Some(0)
     }
 }
 
-struct MapDeserializer {
-    iter: <Map<String, Value> as IntoIterator>::IntoIter,
-    value: Option<Value>,
-}
-
-impl MapDeserializer {
-    fn new(map: Map<String, Value>) -> Self {
-        MapDeserializer {
-            iter: map.into_iter(),
-            value: None,
-        }
-    }
-}
-
-impl<'de> MapAccess<'de> for MapDeserializer {
+impl<'de> MapAccess<'de> for DeImpl {
     type Error = Error;
 
     fn next_key_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Error>
