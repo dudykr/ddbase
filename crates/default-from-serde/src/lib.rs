@@ -81,7 +81,7 @@ where
     }
 }
 
-impl<'de> serde::Deserializer<'de> for Value {
+impl<'de> serde::Deserializer<'de> for DefaultDeserializer {
     type Error = Error;
 
     deserialize_number!(deserialize_i8);
