@@ -9,3 +9,4 @@ version     = "0.1.0"
 
 [dependencies]
 derive-default-from-serde = { workspace = true }
+serde                     = { version = "1", default-features = false }
