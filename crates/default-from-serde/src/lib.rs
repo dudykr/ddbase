@@ -1,12 +1,14 @@
 use core::fmt;
-#[cfg(feature = "std")]
 use std::borrow::Cow;
 
 pub use derive_default_from_serde::SerdeDefault;
 use serde::{
     de,
-    de::{DeserializeSeed, Expected, MapAccess, SeqAccess, Unexpected, Visitor},
-    forward_to_deserialize_any,
+    de::{
+        DeserializeSeed, EnumAccess, Expected, IntoDeserializer, MapAccess, SeqAccess, Unexpected,
+        VariantAccess, Visitor,
+    },
+    forward_to_deserialize_any, Deserialize,
 };
 
 // We only use our own error type; no need for From conversions provided by the
@@ -22,6 +24,8 @@ macro_rules! tri {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DefaultDeserializer;
+
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Debug, Clone)]
 pub struct Error;
@@ -269,10 +273,7 @@ impl<'de> de::Deserializer<'de> for DefaultDeserializer {
     where
         V: Visitor<'de>,
     {
-        match self {
-            Value::Object(v) => visit_object(visitor),
-            _ => Err(self.invalid_type(&visitor)),
-        }
+        visit_object(visitor)
     }
 
     fn deserialize_struct<V>(
@@ -307,26 +308,21 @@ impl<'de> de::Deserializer<'de> for DefaultDeserializer {
     }
 }
 
-struct EnumDeserializer {
-    variant: String,
-    value: Option<Value>,
-}
-
-impl<'de> EnumAccess<'de> for EnumDeserializer {
+impl<'de> EnumAccess<'de> for DeImpl {
     type Error = Error;
-    type Variant = VariantDeserializer;
+    type Variant = Self;
 
-    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, VariantDeserializer), Error>
+    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self), Error>
     where
         V: DeserializeSeed<'de>,
     {
         let variant = self.variant.into_deserializer();
-        let visitor = VariantDeserializer { value: self.value };
+        let visitor = DeImpl;
         seed.deserialize(variant).map(|v| (v, visitor))
     }
 }
 
-impl<'de> IntoDeserializer<'de, Error> for Value {
+impl<'de> IntoDeserializer<'de, Error> for DefaultDeserializer {
     type Deserializer = Self;
 
     fn into_deserializer(self) -> Self::Deserializer {
@@ -334,19 +330,7 @@ impl<'de> IntoDeserializer<'de, Error> for Value {
     }
 }
 
-impl<'de> IntoDeserializer<'de, Error> for &'de Value {
-    type Deserializer = Self;
-
-    fn into_deserializer(self) -> Self::Deserializer {
-        self
-    }
-}
-
-struct VariantDeserializer {
-    value: Option<Value>,
-}
-
-impl<'de> VariantAccess<'de> for VariantDeserializer {
+impl<'de> VariantAccess<'de> for DeImpl {
     type Error = Error;
 
     fn unit_variant(self) -> Result<(), Error> {
@@ -467,7 +451,7 @@ macro_rules! deserialize_numeric_key {
         where
             V: Visitor<'de>,
         {
-            let mut de = crate::Deserializer::from_str(&self.key);
+            let mut de = crate::DefaultDeserializer::from_str(&self.key);
 
             match tri!(de.peek()) {
                 Some(b'0'..=b'9' | b'-') => {}
