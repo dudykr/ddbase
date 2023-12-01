@@ -13,8 +13,7 @@ pub fn derive_default_from_serde(input: proc_macro::TokenStream) -> proc_macro::
     let expanded = quote! {
         impl #impl_generics ::std::default::Default for #name #ty_generics #where_clause {
             fn default() -> Self {
-                let json = r#"{}"#;
-                let mut deserializer = ::serde_json::Deserializer::from_str(json);
+                let mut deserializer = ::default_from_serde::DefaultDeserializer;
                 let t = <Self as ::serde::Deserialize>::deserialize(&mut deserializer).unwrap();
                 t
             }
