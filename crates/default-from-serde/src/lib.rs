@@ -39,37 +39,35 @@ macro_rules! deserialize_number {
     };
 }
 
-fn visit_array<'de, V>(array: Vec<Value>, visitor: V) -> Result<V::Value, Error>
+fn visit_array<'de, V>(visitor: V) -> Result<V::Value, Error>
 where
     V: Visitor<'de>,
 {
-    let len = array.len();
-    let mut deserializer = DeImpl::new(array);
+    let mut deserializer = DeImpl;
     let seq = tri!(visitor.visit_seq(&mut deserializer));
     let remaining = deserializer.iter.len();
     if remaining == 0 {
         Ok(seq)
     } else {
         Err(serde::de::Error::invalid_length(
-            len,
+            0,
             &"fewer elements in array",
         ))
     }
 }
 
-fn visit_object<'de, V>(object: Map<String, Value>, visitor: V) -> Result<V::Value, Error>
+fn visit_object<'de, V>(visitor: V) -> Result<V::Value, Error>
 where
     V: Visitor<'de>,
 {
-    let len = object.len();
-    let mut deserializer = DeImpl::new(object);
+    let mut deserializer = DeImpl;
     let map = tri!(visitor.visit_map(&mut deserializer));
     let remaining = deserializer.iter.len();
     if remaining == 0 {
         Ok(map)
     } else {
         Err(serde::de::Error::invalid_length(
-            len,
+            0,
             &"fewer elements in map",
         ))
     }
@@ -444,60 +442,19 @@ impl<'de> MapAccess<'de> for DeImpl {
     where
         T: DeserializeSeed<'de>,
     {
-        match self.iter.next() {
-            Some((key, value)) => {
-                self.value = Some(value);
-                let key_de = MapKeyDeserializer {
-                    key: Cow::Owned(key),
-                };
-                seed.deserialize(key_de).map(Some)
-            }
-            None => Ok(None),
-        }
+        Ok(None)
     }
 
     fn next_value_seed<T>(&mut self, seed: T) -> Result<T::Value, Error>
     where
         T: DeserializeSeed<'de>,
     {
-        match self.value.take() {
-            Some(value) => seed.deserialize(value),
-            None => Err(serde::de::Error::custom("value is missing")),
-        }
+        Err(serde::de::Error::custom("value is missing"))
     }
 
     fn size_hint(&self) -> Option<usize> {
-        match self.iter.size_hint() {
-            (lower, Some(upper)) if lower == upper => Some(upper),
-            _ => None,
-        }
+        Some(0)
     }
-}
-
-macro_rules! deserialize_value_ref_number {
-    ($method:ident) => {
-        #[cfg(not(feature = "arbitrary_precision"))]
-        fn $method<V>(self, visitor: V) -> Result<V::Value, Error>
-        where
-            V: Visitor<'de>,
-        {
-            match self {
-                Value::Number(n) => n.deserialize_any(visitor),
-                _ => Err(self.invalid_type(&visitor)),
-            }
-        }
-
-        #[cfg(feature = "arbitrary_precision")]
-        fn $method<V>(self, visitor: V) -> Result<V::Value, Error>
-        where
-            V: Visitor<'de>,
-        {
-            match self {
-                Value::Number(n) => n.$method(visitor),
-                _ => self.deserialize_any(visitor),
-            }
-        }
-    };
 }
 
 struct MapKeyDeserializer<'de> {
@@ -532,7 +489,7 @@ macro_rules! deserialize_numeric_key {
     };
 }
 
-impl<'de> serde::Deserializer<'de> for MapKeyDeserializer<'de> {
+impl<'de> serde::Deserializer<'de> for DeImpl {
     type Error = Error;
 
     deserialize_numeric_key!(deserialize_i8);
