@@ -218,7 +218,7 @@ impl<'de> de::Deserializer<'de> for DefaultDeserializer {
         match self {
             #[cfg(any(feature = "std", feature = "alloc"))]
             Value::String(v) => visitor.visit_string(v),
-            Value::Array(v) => visit_array(v, visitor),
+            Value::Array(v) => visit_array(visitor),
             _ => Err(self.invalid_type(&visitor)),
         }
     }
@@ -245,7 +245,7 @@ impl<'de> de::Deserializer<'de> for DefaultDeserializer {
         V: Visitor<'de>,
     {
         match self {
-            Value::Array(v) => visit_array(v, visitor),
+            Value::Array(v) => visit_array(visitor),
             _ => Err(self.invalid_type(&visitor)),
         }
     }
@@ -274,7 +274,7 @@ impl<'de> de::Deserializer<'de> for DefaultDeserializer {
         V: Visitor<'de>,
     {
         match self {
-            Value::Object(v) => visit_object(v, visitor),
+            Value::Object(v) => visit_object(visitor),
             _ => Err(self.invalid_type(&visitor)),
         }
     }
@@ -289,8 +289,8 @@ impl<'de> de::Deserializer<'de> for DefaultDeserializer {
         V: Visitor<'de>,
     {
         match self {
-            Value::Array(v) => visit_array(v, visitor),
-            Value::Object(v) => visit_object(v, visitor),
+            Value::Array(v) => visit_array(visitor),
+            Value::Object(v) => visit_object(visitor),
             _ => Err(self.invalid_type(&visitor)),
         }
     }
@@ -382,7 +382,7 @@ impl<'de> VariantAccess<'de> for VariantDeserializer {
                 if v.is_empty() {
                     visitor.visit_unit()
                 } else {
-                    visit_array(v, visitor)
+                    visit_array(visitor)
                 }
             }
             Some(other) => Err(serde::de::Error::invalid_type(
@@ -405,7 +405,7 @@ impl<'de> VariantAccess<'de> for VariantDeserializer {
         V: Visitor<'de>,
     {
         match self.value {
-            Some(Value::Object(v)) => visit_object(v, visitor),
+            Some(Value::Object(v)) => visit_object(visitor),
             Some(other) => Err(serde::de::Error::invalid_type(
                 other.unexpected(),
                 &"struct variant",
