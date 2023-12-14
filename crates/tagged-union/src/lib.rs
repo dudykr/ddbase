@@ -87,10 +87,12 @@ impl Parse for Input {
     }
 }
 
-fn make_impl_item_for_enum(enum_name: &Ident, input: &DataEnum) -> Item {}
+fn make_impl_item_for_enum(enum_name: &Ident, input: &DataEnum) -> Item {
+    let mut items = create_cast_methods_from_orig_enum(input);
+}
 
 fn make_ref_enum(enum_name: &Ident, input: &DataEnum, mutable: bool) -> Item {
-    let docs_of_is = format!(
+    let docs = format!(
         "A reference to the enum [`{name}`]. This is different from &{name} because this type \
          supports creation from a subset of ${name}",
         name = enum_name,
@@ -119,7 +121,7 @@ fn expand(enum_name: &Ident, input: DataEnum) -> Vec<Item> {
     ]
 }
 
-fn expand_old(input: DataEnum) -> Vec<Item> {
+fn create_cast_methods_from_orig_enum(input: &DataEnum) -> Vec<ImplItem> {
     let mut items = vec![];
 
     for v in &input.variants {
