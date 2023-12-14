@@ -1,0 +1,2 @@
+#[derive(TaggedUnion)]
+enum Pat {}
