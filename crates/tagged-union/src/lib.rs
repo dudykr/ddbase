@@ -11,8 +11,8 @@ use syn::{
     spanned::Spanned,
     token::Brace,
     Data, DataEnum, DeriveInput, Expr, ExprLit, Field, FieldMutability, Fields, FieldsNamed,
-    FieldsUnnamed, Generics, Ident, ImplItem, Item, ItemImpl, Lit, Meta, MetaNameValue, Token,
-    Type, TypeReference, TypeTuple, Variant, Visibility, WhereClause,
+    FieldsUnnamed, Generics, Ident, ImplItem, Item, ItemImpl, Lifetime, Lit, Meta, MetaNameValue,
+    Token, Type, TypeReference, TypeTuple, Variant, Visibility, WhereClause,
 };
 
 /// A proc macro to generate methods like is_variant / expect_variant.
@@ -434,7 +434,7 @@ fn types_to_type(types: impl Iterator<Item = Type>) -> Type {
 fn add_ref(ty: Type, mutable: bool) -> Type {
     Type::Reference(TypeReference {
         and_token: Default::default(),
-        lifetime: None,
+        lifetime: Some(Lifetime::new("'tu", Span::call_site())),
         mutability: if mutable {
             Some(Default::default())
         } else {
