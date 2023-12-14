@@ -14,10 +14,10 @@ enum AssignTargetPat {
     ObjectPat(ObjectPat),
 }
 
-struct Ident {}
+pub struct Ident {}
 
-struct AssignPat {}
+pub struct AssignPat {}
 
-struct ArrayPat {}
+pub struct ArrayPat {}
 
-struct ObjectPat {}
+pub struct ObjectPat {}
