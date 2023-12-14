@@ -9,9 +9,10 @@ use syn::{
     parse2, parse_quote,
     punctuated::{Pair, Punctuated},
     spanned::Spanned,
-    Data, DataEnum, DeriveInput, Expr, ExprLit, Field, Fields, Generics, Ident, ImplItem, Item,
-    ItemImpl, Lit, Meta, MetaNameValue, Token, Type, TypeReference, TypeTuple, Variant, Visibility,
-    WhereClause,
+    token::Brace,
+    Data, DataEnum, DeriveInput, Expr, ExprLit, Field, FieldMutability, Fields, FieldsNamed,
+    FieldsUnnamed, Generics, Ident, ImplItem, Item, ItemImpl, Lit, Meta, MetaNameValue, Token,
+    Type, TypeReference, TypeTuple, Variant, Visibility, WhereClause,
 };
 
 /// A proc macro to generate methods like is_variant / expect_variant.
@@ -122,16 +123,50 @@ fn make_ref_enum(
 
     for v in &input.variants {
         let variant = &v.ident;
-        let mut fields = vec![];
-        if let Fields::Unnamed(fields_) = &v.fields {
-            for (i, f) in fields_.unnamed.iter().enumerate() {
-                let ty = &f.ty;
-                let name = Ident::new(&format!("v{}", i), f.span());
-                fields.push(quote!(#name: #ty));
-            }
-        }
+        let mut fields: Punctuated<Field, Token![,]> = Default::default();
+        let fields = match &v.fields {
+            Fields::Unnamed(fields_) => {
+                for f in fields_.unnamed.iter() {
+                    let ty = add_ref(f.ty.clone(), mutable);
+                    fields.push(Field {
+                        attrs: Default::default(),
+                        vis: Visibility::Inherited,
+                        mutability: FieldMutability::None,
+                        ident: None,
+                        colon_token: None,
+                        ty,
+                    });
+                }
 
-        let variant = parse_quote!(#variant { #(#fields),* });
+                Fields::Unnamed(FieldsUnnamed {
+                    paren_token: Default::default(),
+                    unnamed: fields,
+                })
+            }
+            Fields::Named(fields_) => {
+                for f in fields_.named.iter() {
+                    let ty = add_ref(f.ty.clone(), mutable);
+                    let name = f.ident.clone().unwrap();
+
+                    fields.push(Field {
+                        attrs: Default::default(),
+                        vis: Visibility::Inherited,
+                        mutability: FieldMutability::None,
+                        ident: Some(name),
+                        colon_token: None,
+                        ty,
+                    });
+                }
+
+                Fields::Named(FieldsNamed {
+                    brace_token: Default::default(),
+                    named: fields,
+                })
+            }
+            _ => todo!("ref enum for unit variant"),
+        };
+
+        let variant = parse_quote!(#variant #fields);
 
         variants.push(variant);
     }
@@ -298,8 +333,8 @@ fn create_cast_methods_from_orig_enum(input: &DataEnum) -> Vec<ImplItem> {
 
             if let Fields::Unnamed(fields) = &v.fields {
                 let types = fields.unnamed.iter().map(|f| f.ty.clone());
-                let cast_ty = types_to_type(types.clone().map(|ty| add_ref(false, ty)));
-                let cast_ty_mut = types_to_type(types.clone().map(|ty| add_ref(true, ty)));
+                let cast_ty = types_to_type(types.clone().map(|ty| add_ref(ty, false)));
+                let cast_ty_mut = types_to_type(types.clone().map(|ty| add_ref(ty, true)));
                 let ty = types_to_type(types);
 
                 let mut fields: Punctuated<Ident, Token![,]> = fields
@@ -396,7 +431,7 @@ fn types_to_type(types: impl Iterator<Item = Type>) -> Type {
     }
 }
 
-fn add_ref(mutable: bool, ty: Type) -> Type {
+fn add_ref(ty: Type, mutable: bool) -> Type {
     Type::Reference(TypeReference {
         and_token: Default::default(),
         lifetime: None,
