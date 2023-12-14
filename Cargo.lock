@@ -945,14 +945,14 @@ dependencies = [
 
 [[package]]
 name = "tagged-union"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "tagged-union-macro",
 ]
 
 [[package]]
 name = "tagged-union-macro"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "Inflector",
  "proc-macro2",
