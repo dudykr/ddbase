@@ -8,4 +8,4 @@ repository  = "https://github.com/dudykr/ddbase.git"
 version     = "0.0.1"
 
 [dependencies]
-tagged-union-macro = { path = "../tagged-union-macro" }
+tagged-union-macro = { path = "../tagged-union-macro", version = "0.0.1" }
