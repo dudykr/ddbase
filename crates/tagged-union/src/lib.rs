@@ -56,7 +56,7 @@ pub fn derive_tagged_union(input: proc_macro::TokenStream) -> proc_macro::TokenS
     let generics: Generics = input.generics.clone();
 
     let items = match input.data {
-        Data::Enum(e) => expand(e),
+        Data::Enum(e) => expand(&input.ident, e),
         _ => panic!("`Is` can be applied only on enums"),
     };
 
@@ -87,11 +87,17 @@ impl Parse for Input {
     }
 }
 
-fn make_impl_item_for_enum(input: &DataEnum) -> Item {}
+fn make_impl_item_for_enum(enum_name: &Ident, input: &DataEnum) -> Item {}
 
-fn make_ref_enum(input: &DataEnum, mutable: bool) -> Item {}
+fn make_ref_enum(enum_name: &Ident, input: &DataEnum, mutable: bool) -> Item {
+    let docs_of_is = format!(
+        "A reference to the enum [`{name}`]. This is different from &{name} because this type \
+         supports creation from a subset of ${name}",
+        name = enum_name,
+    );
+}
 
-fn make_impl_item_for_ref_enum(input: &DataEnum, mutable: bool) -> Item {}
+fn make_impl_item_for_ref_enum(enum_name: &Ident, input: &DataEnum, mutable: bool) -> Item {}
 
 fn ref_enum_name(enum_name: &Ident, mutable: bool) -> Ident {
     let mut name = enum_name.to_string();
@@ -103,13 +109,13 @@ fn ref_enum_name(enum_name: &Ident, mutable: bool) -> Ident {
     Ident::new(&name, enum_name.span())
 }
 
-fn expand(input: DataEnum) -> Vec<Item> {
+fn expand(enum_name: &Ident, input: DataEnum) -> Vec<Item> {
     vec![
-        make_impl_item_for_enum(&input),
-        make_ref_enum(&input, false),
-        make_impl_item_for_ref_enum(&input, false),
-        make_ref_enum(&input, true),
-        make_impl_item_for_ref_enum(&input, true),
+        make_impl_item_for_enum(enum_name, &input),
+        make_ref_enum(enum_name, &input, false),
+        make_impl_item_for_ref_enum(enum_name, &input, false),
+        make_ref_enum(enum_name, &input, true),
+        make_impl_item_for_ref_enum(enum_name, &input, true),
     ]
 }
 
