@@ -7,10 +7,12 @@ name        = "tagged-union"
 repository  = "https://github.com/dudykr/ddbase.git"
 version     = "0.1.0"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+proc-macro = true
 
 [dependencies]
 Inflector   = { version = "0.11.4", default-features = false }
 proc-macro2 = "1"
 quote       = "1"
-syn         = { version = "2", features = ["derive"] }
+syn         = { version = "2", features = ["derive", "full"] }
