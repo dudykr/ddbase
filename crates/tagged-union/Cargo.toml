@@ -5,7 +5,7 @@ edition     = "2021"
 license     = "Apache-2.0"
 name        = "tagged-union"
 repository  = "https://github.com/dudykr/ddbase.git"
-version     = "0.1.0"
+version     = "0.0.1"
 
 [dependencies]
 tagged-union-macro = { path = "../tagged-union-macro" }
