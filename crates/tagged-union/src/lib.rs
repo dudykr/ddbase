@@ -133,7 +133,7 @@ fn make_ref_enum(
 
         let variant = parse_quote!(#variant { #(#fields),* });
 
-        variants.push_value(variant);
+        variants.push(variant);
     }
 
     parse_quote!(
