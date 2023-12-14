@@ -9,6 +9,7 @@ use syn::{
     parse2, parse_quote,
     punctuated::{Pair, Punctuated},
     spanned::Spanned,
+    token::Ge,
     Data, DataEnum, DeriveInput, Expr, ExprLit, Field, Fields, Generics, Ident, ImplItem, Item,
     ItemImpl, Lit, Meta, MetaNameValue, Path, Token, Type, TypePath, TypeReference, TypeTuple,
     WhereClause,
@@ -87,11 +88,11 @@ impl Parse for Input {
     }
 }
 
-fn make_impl_item_for_enum(enum_name: &Ident, input: &DataEnum) -> Item {
+fn make_impl_item_for_enum(enum_name: &Ident, generics: &Generics, input: &DataEnum) -> Item {
     let mut items = create_cast_methods_from_orig_enum(input);
 }
 
-fn make_ref_enum(enum_name: &Ident, input: &DataEnum, mutable: bool) -> Item {
+fn make_ref_enum(enum_name: &Ident, generics: &Generics, input: &DataEnum, mutable: bool) -> Item {
     let docs = format!(
         "A reference to the enum [`{name}`]. This is different from &{name} because this type \
          supports creation from a subset of ${name}",
@@ -99,7 +100,13 @@ fn make_ref_enum(enum_name: &Ident, input: &DataEnum, mutable: bool) -> Item {
     );
 }
 
-fn make_impl_item_for_ref_enum(enum_name: &Ident, input: &DataEnum, mutable: bool) -> Item {}
+fn make_impl_item_for_ref_enum(
+    enum_name: &Ident,
+    generics: &Generics,
+    input: &DataEnum,
+    mutable: bool,
+) -> Item {
+}
 
 fn ref_enum_name(enum_name: &Ident, mutable: bool) -> Ident {
     let mut name = enum_name.to_string();
@@ -111,13 +118,13 @@ fn ref_enum_name(enum_name: &Ident, mutable: bool) -> Ident {
     Ident::new(&name, enum_name.span())
 }
 
-fn expand(enum_name: &Ident, input: DataEnum) -> Vec<Item> {
+fn expand(enum_name: &Ident, generics: &Generics, input: DataEnum) -> Vec<Item> {
     vec![
-        make_impl_item_for_enum(enum_name, &input),
-        make_ref_enum(enum_name, &input, false),
-        make_impl_item_for_ref_enum(enum_name, &input, false),
-        make_ref_enum(enum_name, &input, true),
-        make_impl_item_for_ref_enum(enum_name, &input, true),
+        make_impl_item_for_enum(enum_name, generics, &input),
+        make_ref_enum(enum_name, generics, &input, false),
+        make_impl_item_for_ref_enum(enum_name, generics, &input, false),
+        make_ref_enum(enum_name, generics, &input, true),
+        make_impl_item_for_ref_enum(enum_name, generics, &input, true),
     ]
 }
 
