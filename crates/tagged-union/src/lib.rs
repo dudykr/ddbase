@@ -112,8 +112,8 @@ fn make_ref_enum(
     let new_type_name = ref_enum_name(enum_name, mutable);
 
     let docs = format!(
-        "A reference to the enum [`{name}`]. This is different from &{name} because this type \
-         supports creation from a subset of ${name}",
+        "A reference to the enum [`{name}`]. This is different from `&{name}` because this type \
+         supports creation from a subset of [`{name}`]",
         name = enum_name,
     );
 
