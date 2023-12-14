@@ -1,0 +1,16 @@
+[package]
+authors     = ["강동윤 <kdy1997.dev@gmail.com>"]
+description = "A real tagged union type for Rust"
+edition     = "2021"
+license     = "Apache-2.0"
+name        = "tagged-union"
+repository  = "https://github.com/dudykr/ddbase.git"
+version     = "0.1.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+Inflector   = { version = "0.11.4", default-features = false }
+proc-macro2 = "1"
+quote       = "1"
+syn         = { version = "2", features = ["derive"] }

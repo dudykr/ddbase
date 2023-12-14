@@ -3,6 +3,7 @@ members = [
     "crates/dudy-malloc",
     "crates/hstr",
     "crates/default-from-serde",
+    "crates/tagged-union",
     "xtask",
 ]
 resolver = "2"
