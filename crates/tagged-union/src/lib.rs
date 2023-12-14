@@ -146,7 +146,7 @@ fn ref_enum_name(enum_name: &Ident, mutable: bool) -> Ident {
     if mutable {
         name.push_str("Ref");
     } else {
-        name.push_str("RefMut");
+        name.push_str("MutRef");
     }
     Ident::new(&name, enum_name.span())
 }
