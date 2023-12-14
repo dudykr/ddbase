@@ -91,7 +91,7 @@ fn make_impl_item_for_enum(input: &DataEnum) -> Item {}
 
 fn make_ref_enum(input: &DataEnum, mutable: bool) -> Item {}
 
-fn make_impl_item_fo_ref_enum(input: &DataEnum, mutable: bool) -> Item {}
+fn make_impl_item_for_ref_enum(input: &DataEnum, mutable: bool) -> Item {}
 
 fn ref_enum_name(enum_name: &Ident, mutable: bool) -> Ident {
     let mut name = enum_name.to_string();
@@ -104,6 +104,16 @@ fn ref_enum_name(enum_name: &Ident, mutable: bool) -> Ident {
 }
 
 fn expand(input: DataEnum) -> Vec<Item> {
+    vec![
+        make_impl_item_for_enum(&input),
+        make_ref_enum(&input, false),
+        make_impl_item_for_ref_enum(&input, false),
+        make_ref_enum(&input, true),
+        make_impl_item_for_ref_enum(&input, true),
+    ]
+}
+
+fn expand_old(input: DataEnum) -> Vec<Item> {
     let mut items = vec![];
 
     for v in &input.variants {
