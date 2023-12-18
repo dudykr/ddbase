@@ -1,4 +1,3 @@
-use pmutil::ToTokensExt;
 use proc_macro2::Span;
 use quote::quote;
 use syn::{parse, Generics, ItemImpl, WhereClause};

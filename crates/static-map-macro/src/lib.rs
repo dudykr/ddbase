@@ -2,7 +2,6 @@ extern crate proc_macro;
 
 use std::iter::once;
 
-use pmutil::{prelude::*, smart_quote};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
 use syn::{
