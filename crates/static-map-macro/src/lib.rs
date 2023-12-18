@@ -205,25 +205,18 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
         // map(), map_value()
         let item = if input.generics.params.is_empty() {
-            Quote::new_call_site().quote_with(smart_quote!(
-                Vars {
-                    Type: &name,
-                    T: &data_type,
-                    fields: &map_fields,
-                },
-                {
-                    impl Type {
-                        pub fn map(self, mut op: impl FnMut(&'static str, T) -> T) -> Type {
-                            Type { fields }
-                        }
+            quote!(
+                impl #name {
+                    pub fn map(self, mut op: impl FnMut(&'static str, #data_type) -> #data_type) -> #name {
+                        #name { #map_fields }
+                    }
 
-                        #[inline]
-                        pub fn map_value(self, mut op: impl FnMut(T) -> T) -> Type {
-                            self.map(|_, v| op(v))
-                        }
+                    #[inline]
+                    pub fn map_value(self, mut op: impl FnMut(#data_type) -> #data_type) -> #name {
+                        self.map(|_, v| op(v))
                     }
                 }
-            ))
+            )
         } else if match input.generics.params.first().as_ref().unwrap() {
             GenericParam::Type(ty) => ty.bounds.is_empty(),
             _ => false,
