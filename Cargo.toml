@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/dudy-malloc",
+    "crates/is-macro",
     "crates/hstr",
     "crates/default-from-serde",
     "xtask",
