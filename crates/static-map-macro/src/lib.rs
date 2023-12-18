@@ -160,26 +160,17 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 .collect(),
         };
 
-        Quote::new_call_site()
-            .quote_with(smart_quote!(
-                Vars {
-                    Type: &name,
-                    T: &data_type,
-                    body,
-                },
-                {
-                    impl<'a, K: ?Sized + ::std::borrow::Borrow<str>> ::std::ops::Index<&'a K> for Type {
-                        type Output = T;
-                        fn index(&self, v: &K) -> &Self::Output {
-                            use std::borrow::Borrow;
-                            let v: &str = v.borrow();
-                            body
-                        }
-                    }
+        let item: ItemImpl = parse_quote!(
+            impl<'a, K: ?Sized + ::std::borrow::Borrow<str>> ::std::ops::Index<&'a K> for #name {
+                type Output = #data_type;
+                fn index(&self, v: &K) -> &Self::Output {
+                    use std::borrow::Borrow;
+                    let v: &str = v.borrow();
+                    #body
                 }
-            ))
-            .parse::<ItemImpl>()
-            .with_generics(input.generics.clone())
+            }
+        );
+        item.with_generics(input.generics.clone())
             .to_tokens(&mut tts);
     }
 
