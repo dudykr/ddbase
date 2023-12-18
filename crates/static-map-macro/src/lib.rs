@@ -2,7 +2,6 @@ extern crate proc_macro;
 
 use std::iter::once;
 
-use pmutil::{prelude::*, smart_quote};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
 use syn::{
@@ -54,56 +53,43 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         let make = |m: Mode| {
             let arr: Punctuated<_, Token![;]> = fields
                 .iter()
-                .map(|f| {
+                .map(|f| -> Expr {
                     //
-                    Quote::new_call_site()
-                        .quote_with(smart_quote!(
-                            Vars {
-                                name: f.ident.as_ref().unwrap(),
+                    let name = f.ident.as_ref().unwrap();
+                    let mode = match m {
+                        Mode::Value => quote!(),
+                        Mode::Ref => quote!(&),
+                        Mode::MutRef => quote!(&mut),
+                    };
+                    let value = f.ident.as_ref().unwrap();
 
-                                mode: match m {
-                                    Mode::Value => quote!(),
-                                    Mode::Ref => quote!(&),
-                                    Mode::MutRef => quote!(&mut),
-                                },
-
-                                // self.field
-                                value: f.ident.as_ref().unwrap(),
-                            },
-                            (v.push((stringify!(name), mode self.value)))
-                        ))
-                        .parse::<Expr>()
+                    parse_quote!(
+                        v.push((stringify!(#name), #mode self.#value))
+                    )
                 })
                 .collect();
 
             arr
         };
 
-        Quote::new_call_site()
-            .quote_with(smart_quote!(
-                Vars {
-                    Type: &name,
-                    T: &data_type,
-                    body: make(Mode::Value),
-                    len
-                },
-                {
-                    impl IntoIterator for Type {
-                        type IntoIter = st_map::arrayvec::IntoIter<(&'static str, T), len>;
-                        type Item = (&'static str, T);
+        let body = make(Mode::Value);
 
-                        fn into_iter(self) -> Self::IntoIter {
-                            let mut v: st_map::arrayvec::ArrayVec<_, len> = Default::default();
+        let item: ItemImpl = parse_quote!(
+            impl IntoIterator for #name {
+                type IntoIter = st_map::arrayvec::IntoIter<(&'static str, #data_type), #len>;
+                type Item = (&'static str, #data_type);
 
-                            body;
+                fn into_iter(self) -> Self::IntoIter {
+                    let mut v: st_map::arrayvec::ArrayVec<_, #len> = Default::default();
 
-                            v.into_iter()
-                        }
-                    }
+                    #body;
+
+                    v.into_iter()
                 }
-            ))
-            .parse::<ItemImpl>()
-            .with_generics(input.generics.clone())
+            }
+        );
+
+        item.with_generics(input.generics.clone())
             .to_tokens(&mut tts);
     }
 
@@ -139,13 +125,12 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         let body = ExprMatch {
             attrs: Default::default(),
             match_token: Default::default(),
-            expr: Quote::new_call_site()
-                .quote_with(smart_quote!(Vars {}, { v }))
-                .parse(),
+            expr: parse_quote!(v),
             brace_token: Default::default(),
             arms: fields
                 .iter()
                 .map(|f| {
+                    let variant = &f.ident;
                     //
                     Arm {
                         attrs: Default::default(),
@@ -158,42 +143,27 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                         }),
                         guard: None,
                         fat_arrow_token: Default::default(),
-                        body: Quote::new_call_site()
-                            .quote_with(smart_quote!(Vars { variant: &f.ident }, { &self.variant }))
-                            .parse(),
+                        body: parse_quote!(&self.#variant),
                         comma: Some(Default::default()),
                     }
                 })
-                .chain(once(
-                    Quote::new_call_site()
-                        .quote_with(smart_quote!(Vars {}, {
-                            _ => panic!("Unknown key: {}", v),
-                        }))
-                        .parse(),
-                ))
+                .chain(once(parse_quote!(
+                    _ => panic!("Unknown key: {}", v),
+                )))
                 .collect(),
         };
 
-        Quote::new_call_site()
-            .quote_with(smart_quote!(
-                Vars {
-                    Type: &name,
-                    T: &data_type,
-                    body,
-                },
-                {
-                    impl<'a, K: ?Sized + ::std::borrow::Borrow<str>> ::std::ops::Index<&'a K> for Type {
-                        type Output = T;
-                        fn index(&self, v: &K) -> &Self::Output {
-                            use std::borrow::Borrow;
-                            let v: &str = v.borrow();
-                            body
-                        }
-                    }
+        let item: ItemImpl = parse_quote!(
+            impl<'a, K: ?Sized + ::std::borrow::Borrow<str>> ::std::ops::Index<&'a K> for #name {
+                type Output = #data_type;
+                fn index(&self, v: &K) -> &Self::Output {
+                    use std::borrow::Borrow;
+                    let v: &str = v.borrow();
+                    #body
                 }
-            ))
-            .parse::<ItemImpl>()
-            .with_generics(input.generics.clone())
+            }
+        );
+        item.with_generics(input.generics.clone())
             .to_tokens(&mut tts);
     }
 
@@ -205,91 +175,66 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
         let map_fields: Punctuated<_, Token![,]> = fields
             .iter()
-            .map(|f| {
-                Quote::new_call_site()
-                    .quote_with(smart_quote!(
-                        Vars {
-                            f: f.ident.as_ref().unwrap()
-                        },
-                        (f: op(stringify!(f), self.f))
-                    ))
-                    .parse::<FieldValue>()
+            .map(|f| -> FieldValue {
+                let f = f.ident.as_ref().unwrap();
+                let f_str = f.to_string();
+                parse_quote!(
+                    #f: op(#f_str, self.#f)
+                )
             })
             .collect();
 
         // map(), map_value()
         let item = if input.generics.params.is_empty() {
-            Quote::new_call_site().quote_with(smart_quote!(
-                Vars {
-                    Type: &name,
-                    T: &data_type,
-                    fields: &map_fields,
-                },
-                {
-                    impl Type {
-                        pub fn map(self, mut op: impl FnMut(&'static str, T) -> T) -> Type {
-                            Type { fields }
-                        }
+            quote!(
+                impl #name {
+                    pub fn map(self, mut op: impl FnMut(&'static str, #data_type) -> #data_type) -> #name {
+                        #name { #map_fields }
+                    }
 
-                        #[inline]
-                        pub fn map_value(self, mut op: impl FnMut(T) -> T) -> Type {
-                            self.map(|_, v| op(v))
-                        }
+                    #[inline]
+                    pub fn map_value(self, mut op: impl FnMut(#data_type) -> #data_type) -> #name {
+                        self.map(|_, v| op(v))
                     }
                 }
-            ))
+            )
         } else if match input.generics.params.first().as_ref().unwrap() {
             GenericParam::Type(ty) => ty.bounds.is_empty(),
             _ => false,
         } {
-            Quote::new_call_site().quote_with(smart_quote!(
-                Vars {
-                    Type: &name,
-                    T: &data_type,
-                    fields: &map_fields,
-                },
-                {
-                    impl<T> Type<T> {
-                        pub fn map<N>(self, mut op: impl FnMut(&'static str, T) -> N) -> Type<N> {
-                            Type { fields }
-                        }
+            quote!(
+                impl<T> #name<T> {
+                    pub fn map<N>(self, mut op: impl FnMut(&'static str, #data_type) -> N) -> #name<N> {
+                        #name { #map_fields }
+                    }
 
-                        #[inline]
-                        pub fn map_value<N>(self, mut op: impl FnMut(T) -> N) -> Type<N> {
-                            self.map(|_, v| op(v))
-                        }
+                    #[inline]
+                    pub fn map_value<N>(self, mut op: impl FnMut(#data_type) -> N) -> #name<N> {
+                        self.map(|_, v| op(v))
                     }
                 }
-            ))
+            )
         } else {
             let bound = match input.generics.params.first().as_ref().unwrap() {
                 GenericParam::Type(ty) => &ty.bounds,
                 _ => unimplemented!("Generic parameters other than type parameter"),
             };
 
-            Quote::new_call_site().quote_with(smart_quote!(
-                Vars {
-                    Type: &name,
-                    T: &data_type,
-                    fields: &map_fields,
-                    Bound: &bound,
-                },
-                {
-                    impl<T: Bound> Type<T> {
-                        pub fn map<N: Bound>(
-                            self,
-                            mut op: impl FnMut(&'static str, T) -> N,
-                        ) -> Type<N> {
-                            Type { fields }
-                        }
+            quote!(
+                impl<#data_type: #bound> #name<#data_type> {
+                    pub fn map<N: #bound>(
+                        self,
+                        mut op: impl FnMut(&'static str, #data_type) -> N,
+                    ) -> #name<N> {
+                        #name { #map_fields }
+                    }
 
-                        #[inline]
-                        pub fn map_value<N: Bound>(self, mut op: impl FnMut(T) -> N) -> Type<N> {
-                            self.map(|_, v| op(v))
-                        }
+                    #[inline]
+                    pub fn map_value<N: #bound>(self, mut op: impl FnMut(#data_type) -> N) -> #name<N> {
+                        self.map(|_, v| op(v))
                     }
                 }
-            ))
+            )
         };
 
         item.to_tokens(&mut tts);

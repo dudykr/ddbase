@@ -5,10 +5,10 @@ edition     = "2018"
 license     = "Apache-2.0"
 name        = "st-map"
 repository  = "https://github.com/dudykr/ddbase"
-version     = "0.2.1"
+version     = "0.2.2"
 
 [lib]
 
 [dependencies]
 arrayvec         = "0.7.2"
-static-map-macro = { path = "../static-map-macro", version = "0.3.1" }
+static-map-macro = { path = "../static-map-macro", version = "0.3.2"}
