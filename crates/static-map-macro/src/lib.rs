@@ -192,14 +192,11 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         let map_fields: Punctuated<_, Token![,]> = fields
             .iter()
             .map(|f| {
-                Quote::new_call_site()
-                    .quote_with(smart_quote!(
-                        Vars {
-                            f: f.ident.as_ref().unwrap()
-                        },
-                        (f: op(stringify!(f), self.f))
-                    ))
-                    .parse::<FieldValue>()
+                let f = f.ident.as_ref().unwrap();
+                let f_str = f.to_string();
+                parse_quote!(
+                    #f: op(#f_str, self.#f)
+                )
             })
             .collect();
 
