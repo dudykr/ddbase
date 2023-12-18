@@ -72,31 +72,24 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             arr
         };
 
-        Quote::new_call_site()
-            .quote_with(smart_quote!(
-                Vars {
-                    Type: &name,
-                    T: &data_type,
-                    body: make(Mode::Value),
-                    len
-                },
-                {
-                    impl IntoIterator for Type {
-                        type IntoIter = st_map::arrayvec::IntoIter<(&'static str, T), len>;
-                        type Item = (&'static str, T);
+        let body = make(Mode::Value);
 
-                        fn into_iter(self) -> Self::IntoIter {
-                            let mut v: st_map::arrayvec::ArrayVec<_, len> = Default::default();
+        let item: ItemImpl = parse_quote!(
+            impl IntoIterator for #name {
+                type IntoIter = st_map::arrayvec::IntoIter<(&'static str, #data_type), #len>;
+                type Item = (&'static str, #data_type);
 
-                            body;
+                fn into_iter(self) -> Self::IntoIter {
+                    let mut v: st_map::arrayvec::ArrayVec<_, len> = Default::default();
 
-                            v.into_iter()
-                        }
-                    }
+                    #body;
+
+                    v.into_iter()
                 }
-            ))
-            .parse::<ItemImpl>()
-            .with_generics(input.generics.clone())
+            }
+        );
+
+        item.with_generics(input.generics.clone())
             .to_tokens(&mut tts);
     }
 
