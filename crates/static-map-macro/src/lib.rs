@@ -53,7 +53,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         let make = |m: Mode| {
             let arr: Punctuated<_, Token![;]> = fields
                 .iter()
-                .map(|f| {
+                .map(|f| -> Expr {
                     //
                     let name = f.ident.as_ref().unwrap();
                     let mode = match m {
@@ -80,7 +80,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 type Item = (&'static str, #data_type);
 
                 fn into_iter(self) -> Self::IntoIter {
-                    let mut v: st_map::arrayvec::ArrayVec<_, len> = Default::default();
+                    let mut v: st_map::arrayvec::ArrayVec<_, #len> = Default::default();
 
                     #body;
 
@@ -175,7 +175,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
         let map_fields: Punctuated<_, Token![,]> = fields
             .iter()
-            .map(|f| {
+            .map(|f| -> FieldValue {
                 let f = f.ident.as_ref().unwrap();
                 let f_str = f.to_string();
                 parse_quote!(
