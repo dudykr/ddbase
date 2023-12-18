@@ -1,7 +1,7 @@
 use tagged_union::TaggedUnion;
 
 #[derive(TaggedUnion)]
-enum Pat {
+pub enum Pat {
     Ident(Ident),
     ArrayPat(ArrayPat),
     ObjectPat(ObjectPat),
@@ -9,7 +9,7 @@ enum Pat {
 }
 
 #[derive(TaggedUnion)]
-enum AssignTargetPat {
+pub enum AssignTargetPat {
     ArrayPat(ArrayPat),
     ObjectPat(ObjectPat),
 }

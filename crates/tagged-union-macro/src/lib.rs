@@ -53,7 +53,6 @@ use syn::{
 #[proc_macro_derive(TaggedUnion, attributes(tagged_union))]
 pub fn derive_tagged_union(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input: DeriveInput = syn::parse(input).expect("failed to parse derive input");
-    let generics: Generics = input.generics.clone();
 
     let items = match input.data {
         Data::Enum(e) => expand(&input.ident, &input.vis, &input.generics, e),
