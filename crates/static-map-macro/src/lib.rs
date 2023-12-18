@@ -132,9 +132,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         let body = ExprMatch {
             attrs: Default::default(),
             match_token: Default::default(),
-            expr: Quote::new_call_site()
-                .quote_with(smart_quote!(Vars {}, { v }))
-                .parse(),
+            expr: parse_quote!(v),
             brace_token: Default::default(),
             arms: fields
                 .iter()
