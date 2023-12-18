@@ -616,17 +616,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pmutil"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52a40bc70c2c58040d2d8b167ba9a5ff59fc9dab7ad44771cfde3dcfde7a09c6"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.39",
-]
-
-[[package]]
 name = "ppv-lite86"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -940,7 +929,6 @@ dependencies = [
 name = "static-map-macro"
 version = "0.3.1"
 dependencies = [
- "pmutil",
  "proc-macro2",
  "quote",
  "syn 2.0.39",
