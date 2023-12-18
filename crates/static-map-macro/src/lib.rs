@@ -139,6 +139,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             arms: fields
                 .iter()
                 .map(|f| {
+                    let variant = &f.ident;
                     //
                     Arm {
                         attrs: Default::default(),
@@ -151,19 +152,13 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                         }),
                         guard: None,
                         fat_arrow_token: Default::default(),
-                        body: Quote::new_call_site()
-                            .quote_with(smart_quote!(Vars { variant: &f.ident }, { &self.variant }))
-                            .parse(),
+                        body: parse_quote!(&self.#variant),
                         comma: Some(Default::default()),
                     }
                 })
-                .chain(once(
-                    Quote::new_call_site()
-                        .quote_with(smart_quote!(Vars {}, {
-                            _ => panic!("Unknown key: {}", v),
-                        }))
-                        .parse(),
-                ))
+                .chain(once(parse_quote!(
+                    _ => panic!("Unknown key: {}", v),
+                )))
                 .collect(),
         };
 
