@@ -18,4 +18,4 @@ See [docs.rs](https://docs.rs/default-from-serde) for the Rust code.
 APACHE-2.0.
 
 Some source code are copied from `serde_json`.
-This library is pracrically deserialize using `serde_json` with `{}`.
+This library is practically deserialize using `serde_json` with `{}`.
