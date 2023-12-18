@@ -1,0 +1,24 @@
+[package]
+authors       = ["강동윤 <kdy1997.dev@gmail.com>"]
+description   = "Derive methods for using custom enums like Option / Result"
+documentation = "https://docs.rs/is-macro"
+edition       = "2018"
+license       = "Apache-2.0"
+name          = "is-macro"
+repository    = "https://github.com/dudykr/ddbase"
+version       = "0.3.4"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+Inflector = { version = "0.11.4", default-features = false }
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = [
+    "fold",
+    "full",
+    "derive",
+    "extra-traits",
+    "fold",
+] }
