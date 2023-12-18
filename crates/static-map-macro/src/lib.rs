@@ -266,29 +266,21 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 _ => unimplemented!("Generic parameters other than type parameter"),
             };
 
-            Quote::new_call_site().quote_with(smart_quote!(
-                Vars {
-                    Type: &name,
-                    T: &data_type,
-                    fields: &map_fields,
-                    Bound: &bound,
-                },
-                {
-                    impl<T: Bound> Type<T> {
-                        pub fn map<N: Bound>(
-                            self,
-                            mut op: impl FnMut(&'static str, T) -> N,
-                        ) -> Type<N> {
-                            Type { fields }
-                        }
+            quote!(
+                impl<#data_type: #bound> #name<#data_type> {
+                    pub fn map<N: #bound>(
+                        self,
+                        mut op: impl FnMut(&'static str, #data_type) -> N,
+                    ) -> #name<N> {
+                        #name { #map_fields }
+                    }
 
-                        #[inline]
-                        pub fn map_value<N: Bound>(self, mut op: impl FnMut(T) -> N) -> Type<N> {
-                            self.map(|_, v| op(v))
-                        }
+                    #[inline]
+                    pub fn map_value<N: #bound>(self, mut op: impl FnMut(#data_type) -> N) -> #name<N> {
+                        self.map(|_, v| op(v))
                     }
                 }
-            ))
+            )
         };
 
         item.to_tokens(&mut tts);
