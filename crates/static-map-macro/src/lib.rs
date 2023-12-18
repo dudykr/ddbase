@@ -241,25 +241,18 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             GenericParam::Type(ty) => ty.bounds.is_empty(),
             _ => false,
         } {
-            Quote::new_call_site().quote_with(smart_quote!(
-                Vars {
-                    Type: &name,
-                    T: &data_type,
-                    fields: &map_fields,
-                },
-                {
-                    impl<T> Type<T> {
-                        pub fn map<N>(self, mut op: impl FnMut(&'static str, T) -> N) -> Type<N> {
-                            Type { fields }
-                        }
+            quote!(
+                impl<T> #name<T> {
+                    pub fn map<N>(self, mut op: impl FnMut(&'static str, #data_type) -> N) -> #name<N> {
+                        #name { #map_fields }
+                    }
 
-                        #[inline]
-                        pub fn map_value<N>(self, mut op: impl FnMut(T) -> N) -> Type<N> {
-                            self.map(|_, v| op(v))
-                        }
+                    #[inline]
+                    pub fn map_value<N>(self, mut op: impl FnMut(#data_type) -> N) -> #name<N> {
+                        self.map(|_, v| op(v))
                     }
                 }
-            ))
+            )
         } else {
             let bound = match input.generics.params.first().as_ref().unwrap() {
                 GenericParam::Type(ty) => &ty.bounds,
