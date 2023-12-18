@@ -55,23 +55,17 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 .iter()
                 .map(|f| {
                     //
-                    Quote::new_call_site()
-                        .quote_with(smart_quote!(
-                            Vars {
-                                name: f.ident.as_ref().unwrap(),
+                    let name = f.ident.as_ref().unwrap();
+                    let mode = match m {
+                        Mode::Value => quote!(),
+                        Mode::Ref => quote!(&),
+                        Mode::MutRef => quote!(&mut),
+                    };
+                    let value = f.ident.as_ref().unwrap();
 
-                                mode: match m {
-                                    Mode::Value => quote!(),
-                                    Mode::Ref => quote!(&),
-                                    Mode::MutRef => quote!(&mut),
-                                },
-
-                                // self.field
-                                value: f.ident.as_ref().unwrap(),
-                            },
-                            (v.push((stringify!(name), mode self.value)))
-                        ))
-                        .parse::<Expr>()
+                    parse_quote!(
+                        v.push((stringify!(#name), #mode self.#value))
+                    )
                 })
                 .collect();
 
