@@ -1,5 +1,5 @@
 use proc_macro2::Span;
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::{parse, Generics, ItemImpl, WhereClause};
 
 /// Extension trait for `ItemImpl` (impl block).
@@ -71,8 +71,8 @@ impl ItemImplExt for ItemImpl {
 
                 }
             };
-            parse(item.dump().into())
-                .unwrap_or_else(|err| panic!("with_generics failed: {}\n{}", err, item.dump()))
+            parse(item.into_token_stream().into())
+                .unwrap_or_else(|err| panic!("with_generics failed: {}", err))
         };
 
         // Handle generics added by proc-macro.
