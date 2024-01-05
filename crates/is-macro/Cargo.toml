@@ -6,7 +6,7 @@ edition       = "2018"
 license       = "Apache-2.0"
 name          = "is-macro"
 repository    = "https://github.com/dudykr/ddbase"
-version       = "0.3.4"
+version       = "0.3.5"
 
 [lib]
 proc-macro = true

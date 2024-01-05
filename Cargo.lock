@@ -276,7 +276,7 @@ checksum = "b365fabc795046672053e29c954733ec3b05e4be654ab130fe8f1f94d7051f35"
 
 [[package]]
 name = "default-from-serde"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "derive-default-from-serde",
  "serde",
@@ -285,7 +285,7 @@ dependencies = [
 
 [[package]]
 name = "derive-default-from-serde"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -294,7 +294,7 @@ dependencies = [
 
 [[package]]
 name = "dudy-malloc"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "mimalloc-rust",
  "tikv-jemallocator",
@@ -362,7 +362,7 @@ checksum = "d77f7ec81a6d05a3abb01ab6eb7590f6083d08449fe5a1c8b1e620283546ccb7"
 
 [[package]]
 name = "hstr"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "compact_str",
  "criterion",
@@ -385,7 +385,7 @@ dependencies = [
 
 [[package]]
 name = "is-macro"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "Inflector",
  "proc-macro2",
@@ -919,7 +919,7 @@ dependencies = [
 
 [[package]]
 name = "st-map"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "arrayvec",
  "static-map-macro",
@@ -927,7 +927,7 @@ dependencies = [
 
 [[package]]
 name = "static-map-macro"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "proc-macro2",
  "quote",

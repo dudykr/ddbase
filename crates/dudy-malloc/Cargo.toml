@@ -1,6 +1,6 @@
 [package]
 name = "dudy-malloc"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors       = ["강동윤 <kdy1997.dev@gmail.com>"]
 description   = "Easy way to configure best memory allocation for each platforms"
