@@ -5,7 +5,7 @@ edition     = "2018"
 license     = "Apache-2.0"
 name        = "st-map"
 repository  = "https://github.com/dudykr/ddbase"
-version     = "0.2.2"
+version     = "0.2.3"
 
 [lib]
 
