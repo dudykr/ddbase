@@ -377,7 +377,6 @@ dependencies = [
  "rkyv",
  "rustc-hash",
  "serde",
- "smallvec",
  "smartstring",
  "smol_str",
  "string_cache",
