@@ -1,10 +1,8 @@
 use std::{
-    borrow::{Borrow, Cow},
-    collections::HashSet,
+    borrow::Cow,
     fmt::Debug,
     hash::{BuildHasherDefault, Hash, Hasher},
     num::{NonZeroU32, NonZeroU64},
-    ops::Deref,
     ptr::NonNull,
     sync::{
         atomic::{AtomicU32, AtomicU64, Ordering::SeqCst},
@@ -18,20 +16,13 @@ use crate::{inline_atom_slice_mut, Atom, INLINE_TAG, LEN_OFFSET, MAX_INLINE_LEN,
 
 #[derive(Debug)]
 pub(crate) struct Entry {
-    key: EntryKey<'static>,
+    pub string: Box<str>,
+    pub hash: u64,
     pub store_id: Option<NonZeroU32>,
     pub alias: AtomicU64,
 }
 
 impl Entry {
-    pub fn string(&self) -> &str {
-        &self.key.string
-    }
-
-    pub fn get_hash(&self) -> u64 {
-        self.key.hash
-    }
-
     pub unsafe fn cast(ptr: NonZeroU64) -> *const Entry {
         ptr.get() as *const Entry
     }
@@ -49,8 +40,8 @@ impl Entry {
 impl PartialEq for Entry {
     fn eq(&self, other: &Self) -> bool {
         // Assumption: `store_id` and `alias` don't matter for equality within a single
-        // store (what we care about here).
-        self.key == other.key
+        // store (what we care about here). Compare hash first because that's cheaper.
+        self.hash == other.hash && self.string == other.string
     }
 }
 
@@ -58,72 +49,8 @@ impl Eq for Entry {}
 
 impl Hash for Entry {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.key.hash(state);
-    }
-}
-
-/// The subset of Entry that's used for equality, internally used for lookups in
-/// the HashSet.
-#[derive(Debug)]
-struct EntryKey<'a> {
-    string: CowBoxStr<'a>,
-    hash: u64,
-}
-
-impl<'a> Borrow<EntryKey<'a>> for Arc<Entry> {
-    fn borrow(&self) -> &EntryKey<'a> {
-        &self.key
-    }
-}
-
-impl Hash for EntryKey<'_> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
         // Assumption: type H is an EntryHasher
         state.write_u64(self.hash);
-    }
-}
-
-impl PartialEq for EntryKey<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        // do the cheaper hash comparison first
-        self.hash == other.hash && self.string == other.string
-    }
-}
-
-impl Eq for EntryKey<'_> {}
-
-/// Roughly equivalent to a `Cow<'a, str>`, except that the owned representation
-/// is `Box<str>` instead of `String`, which is slightly smaller (as it doesn't
-/// store a capacity field).
-#[derive(Debug)]
-enum CowBoxStr<'a> {
-    Owned(Box<str>),
-    Borrowed(&'a str),
-}
-
-impl PartialEq for CowBoxStr<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        **self == **other
-    }
-}
-
-impl<'a> Deref for CowBoxStr<'a> {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Self::Owned(s) => s,
-            Self::Borrowed(s) => s,
-        }
-    }
-}
-
-impl<'a> From<Cow<'a, str>> for CowBoxStr<'a> {
-    fn from(value: Cow<'a, str>) -> Self {
-        match value {
-            Cow::Owned(s) => Self::Owned(s.into_boxed_str()),
-            Cow::Borrowed(s) => Self::Borrowed(s),
-        }
     }
 }
 
@@ -135,7 +62,7 @@ impl<'a> From<Cow<'a, str>> for CowBoxStr<'a> {
 #[derive(Debug)]
 pub struct AtomStore {
     pub(crate) id: Option<NonZeroU32>,
-    pub(crate) data: HashSet<Arc<Entry>, BuildEntryHasher>,
+    pub(crate) data: hashbrown::HashMap<Arc<Entry>, (), BuildEntryHasher>,
 }
 
 impl Default for AtomStore {
@@ -144,7 +71,7 @@ impl Default for AtomStore {
 
         Self {
             id: Some(unsafe { NonZeroU32::new_unchecked(ATOM_STORE_ID.fetch_add(1, SeqCst)) }),
-            data: HashSet::with_capacity_and_hasher(64, Default::default()),
+            data: hashbrown::HashMap::with_capacity_and_hasher(64, Default::default()),
         }
     }
 }
@@ -152,8 +79,8 @@ impl Default for AtomStore {
 impl AtomStore {
     ///
     pub fn merge(&mut self, other: AtomStore) {
-        for entry in other.data {
-            let cur_entry = self.insert_entry(Cow::Borrowed(entry.string()), entry.get_hash());
+        for entry in other.data.keys() {
+            let cur_entry = self.insert_entry(Cow::Borrowed(&entry.string), entry.hash);
 
             let ptr = unsafe { NonNull::new_unchecked(Arc::as_ptr(&cur_entry) as *mut Entry) };
 
@@ -211,26 +138,22 @@ impl Storage for &'_ mut AtomStore {
     #[inline(never)]
     fn insert_entry(self, text: Cow<str>, hash: u64) -> Arc<Entry> {
         let store_id = self.id;
-        let lookup_key = EntryKey {
-            string: CowBoxStr::Borrowed(&text),
-            hash,
-        };
-
-        if let Some(existing) = self.data.get(&lookup_key) {
-            return existing.clone();
-        }
-
-        let new_entry = Arc::new(Entry {
-            key: EntryKey {
-                string: CowBoxStr::Owned(text.into_owned().into_boxed_str()),
-                hash,
-            },
-            store_id,
-            alias: AtomicU64::new(0),
-        });
-        let new_entry_ret = new_entry.clone();
-        self.data.insert(new_entry);
-        new_entry_ret
+        let (entry, _) = self
+            .data
+            .raw_entry_mut()
+            .from_hash(hash, |key| key.hash == hash && *key.string == *text)
+            .or_insert_with(move || {
+                (
+                    Arc::new(Entry {
+                        string: text.into_owned().into_boxed_str(),
+                        hash,
+                        store_id,
+                        alias: AtomicU64::new(0),
+                    }),
+                    (),
+                )
+            });
+        entry.clone()
     }
 }
 

@@ -227,7 +227,7 @@ impl Atom {
     #[inline(never)]
     fn get_hash(&self) -> u64 {
         match self.tag() {
-            DYNAMIC_TAG => unsafe { Entry::deref_from(self.unsafe_data) }.get_hash(),
+            DYNAMIC_TAG => unsafe { Entry::deref_from(self.unsafe_data) }.hash,
             STATIC_TAG => {
                 todo!("static hash")
             }
@@ -243,7 +243,7 @@ impl Atom {
     #[inline(never)]
     fn as_str(&self) -> &str {
         match self.tag() {
-            DYNAMIC_TAG => unsafe { Entry::deref_from(self.unsafe_data) }.string(),
+            DYNAMIC_TAG => &unsafe { Entry::deref_from(self.unsafe_data) }.string,
             STATIC_TAG => {
                 todo!("static as_str")
             }
