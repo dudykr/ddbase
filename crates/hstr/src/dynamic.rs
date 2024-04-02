@@ -4,13 +4,11 @@ use std::{
     hash::{BuildHasherDefault, Hash, Hasher},
     num::{NonZeroU32, NonZeroU64},
     ptr::NonNull,
-    sync::{
-        atomic::{AtomicU32, AtomicU64, Ordering::SeqCst},
-        Arc,
-    },
+    sync::atomic::{AtomicU32, AtomicU64, Ordering::SeqCst},
 };
 
 use rustc_hash::FxHasher;
+use triomphe::Arc;
 
 use crate::{inline_atom_slice_mut, Atom, INLINE_TAG, LEN_OFFSET, MAX_INLINE_LEN, TAG_MASK};
 

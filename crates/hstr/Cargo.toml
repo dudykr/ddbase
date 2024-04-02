@@ -1,41 +1,42 @@
 [package]
-name = "hstr"
-version = "0.2.7"
-edition = "2021"
-authors = ["강동윤 <kdy1997.dev@gmail.com>"]
+authors     = ["강동윤 <kdy1997.dev@gmail.com>"]
 description = "A string type which is optimized for hash operations."
-license = "Apache-2.0"
-repository = "https://github.com/dudykr/ddbase.git"
+edition     = "2021"
+license     = "Apache-2.0"
+name        = "hstr"
+repository  = "https://github.com/dudykr/ddbase.git"
+version     = "0.2.8"
 
 [lib]
 bench = false
 
 [[bench]]
-name = "libs"
 harness = false
+name    = "libs"
 
 [features]
+rkyv  = ["dep:rkyv"]
 serde = ["dep:serde"]
-rkyv = ["dep:rkyv"]
 
 
 [dependencies]
-hashbrown = { version = "0.14.3", default-features = false }
+hashbrown             = { version = "0.14.3", default-features = false }
 new_debug_unreachable = "1.0.4"
-once_cell = "1.18.0"
-phf = "0.11.2"
-rkyv = { version = "0.7.42", optional = true }
-rustc-hash = "1.1.0"
-serde = { version = "1.0.192", optional = true }
+once_cell             = "1.18.0"
+phf                   = "0.11.2"
+rkyv                  = { version = "0.7.42", optional = true }
+rustc-hash            = "1.1.0"
+serde                 = { version = "1.0.192", optional = true }
+triomphe              = "0.1.11"
 
 [dev-dependencies]
-compact_str = "0.7.1"
-criterion = "0.5.1"
-dudy-malloc = { version = "0.1.0", path = "../dudy-malloc" }
-kstring = "2.0.0"
-num_cpus = "1.16.0"
-rand = "0.8.5"
-rayon = "1.8.0"
-smartstring = "1.0.1"
-smol_str = "0.2.0"
+compact_str  = "0.7.1"
+criterion    = "0.5.1"
+dudy-malloc  = { version = "0.1.0", path = "../dudy-malloc" }
+kstring      = "2.0.0"
+num_cpus     = "1.16.0"
+rand         = "0.8.5"
+rayon        = "1.8.0"
+smartstring  = "1.0.1"
+smol_str     = "0.2.0"
 string_cache = "0.8.7"
