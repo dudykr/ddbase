@@ -225,16 +225,16 @@ impl Atom {
 
 impl Atom {
     #[inline(never)]
-    fn get_hash(&self) -> u32 {
+    fn get_hash(&self) -> u64 {
         match self.tag() {
             DYNAMIC_TAG => unsafe { Entry::deref_from(self.unsafe_data) }.hash,
             STATIC_TAG => {
                 todo!("static hash")
             }
             INLINE_TAG => {
-                let data = self.unsafe_data.get();
-                // This may or may not be great...
-                ((data >> 32) ^ data) as u32
+                // This is passed as input to the caller's `Hasher` implementation, so it's okay
+                // that this isn't really a hash
+                self.unsafe_data.get()
             }
             _ => unsafe { debug_unreachable!() },
         }
@@ -243,9 +243,7 @@ impl Atom {
     #[inline(never)]
     fn as_str(&self) -> &str {
         match self.tag() {
-            DYNAMIC_TAG => unsafe { Entry::deref_from(self.unsafe_data) }
-                .string
-                .as_ref(),
+            DYNAMIC_TAG => &unsafe { Entry::deref_from(self.unsafe_data) }.string,
             STATIC_TAG => {
                 todo!("static as_str")
             }
@@ -339,7 +337,7 @@ impl Eq for Atom {}
 impl Hash for Atom {
     #[inline(always)]
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        state.write_u32(self.get_hash());
+        state.write_u64(self.get_hash());
     }
 }
 
