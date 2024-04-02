@@ -355,6 +355,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hashbrown"
+version = "0.14.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "290f1a1d9242c78d09ce40a5e87e7554ee637af1351968159f4952f028f75604"
+
+[[package]]
 name = "hermit-abi"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -367,6 +373,7 @@ dependencies = [
  "compact_str",
  "criterion",
  "dudy-malloc",
+ "hashbrown 0.14.3",
  "kstring",
  "new_debug_unreachable",
  "num_cpus",
@@ -377,7 +384,6 @@ dependencies = [
  "rkyv",
  "rustc-hash",
  "serde",
- "smallvec",
  "smartstring",
  "smol_str",
  "string_cache",
@@ -776,7 +782,7 @@ checksum = "0200c8230b013893c0b2d6213d6ec64ed2b9be2e0e016682b7224ff82cff5c58"
 dependencies = [
  "bitvec",
  "bytecheck",
- "hashbrown",
+ "hashbrown 0.12.3",
  "ptr_meta",
  "rend",
  "rkyv_derive",

@@ -1,8 +1,7 @@
 use std::{
     borrow::Cow,
-    collections::HashMap,
     fmt::Debug,
-    hash::{Hash, Hasher},
+    hash::{BuildHasherDefault, Hash, Hasher},
     num::{NonZeroU32, NonZeroU64},
     ptr::NonNull,
     sync::{
@@ -11,18 +10,15 @@ use std::{
     },
 };
 
-use rustc_hash::{FxHashMap, FxHasher};
-use smallvec::SmallVec;
+use rustc_hash::FxHasher;
 
 use crate::{inline_atom_slice_mut, Atom, INLINE_TAG, LEN_OFFSET, MAX_INLINE_LEN, TAG_MASK};
 
 #[derive(Debug)]
 pub(crate) struct Entry {
     pub string: Box<str>,
-    pub hash: u32,
-    /// store id
+    pub hash: u64,
     pub store_id: Option<NonZeroU32>,
-
     pub alias: AtomicU64,
 }
 
@@ -41,6 +37,23 @@ impl Entry {
     }
 }
 
+impl PartialEq for Entry {
+    fn eq(&self, other: &Self) -> bool {
+        // Assumption: `store_id` and `alias` don't matter for equality within a single
+        // store (what we care about here). Compare hash first because that's cheaper.
+        self.hash == other.hash && self.string == other.string
+    }
+}
+
+impl Eq for Entry {}
+
+impl Hash for Entry {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // Assumption: type H is an EntryHasher
+        state.write_u64(self.hash);
+    }
+}
+
 /// A store that stores [Atom]s. Can be merged with other [AtomStore]s for
 /// better performance.
 ///
@@ -49,7 +62,7 @@ impl Entry {
 #[derive(Debug)]
 pub struct AtomStore {
     pub(crate) id: Option<NonZeroU32>,
-    pub(crate) data: FxHashMap<u32, SmallVec<[Arc<Entry>; 4]>>,
+    pub(crate) data: hashbrown::HashMap<Arc<Entry>, (), BuildEntryHasher>,
 }
 
 impl Default for AtomStore {
@@ -58,7 +71,7 @@ impl Default for AtomStore {
 
         Self {
             id: Some(unsafe { NonZeroU32::new_unchecked(ATOM_STORE_ID.fetch_add(1, SeqCst)) }),
-            data: HashMap::with_capacity_and_hasher(64, Default::default()),
+            data: hashbrown::HashMap::with_capacity_and_hasher(64, Default::default()),
         }
     }
 }
@@ -66,14 +79,12 @@ impl Default for AtomStore {
 impl AtomStore {
     ///
     pub fn merge(&mut self, other: AtomStore) {
-        for (_, entries) in other.data {
-            for entry in entries {
-                let cur_entry = self.insert_entry(Cow::Borrowed(&entry.string), entry.hash);
+        for entry in other.data.keys() {
+            let cur_entry = self.insert_entry(Cow::Borrowed(&entry.string), entry.hash);
 
-                let ptr = unsafe { NonNull::new_unchecked(Arc::as_ptr(&cur_entry) as *mut Entry) };
+            let ptr = unsafe { NonNull::new_unchecked(Arc::as_ptr(&cur_entry) as *mut Entry) };
 
-                entry.alias.store(ptr.as_ptr() as u64, SeqCst);
-            }
+            entry.alias.store(ptr.as_ptr() as u64, SeqCst);
         }
     }
 
@@ -120,56 +131,76 @@ where
 }
 
 pub(crate) trait Storage {
-    fn insert_entry(self, text: Cow<str>, hash: u32) -> Arc<Entry>;
+    fn insert_entry(self, text: Cow<str>, hash: u64) -> Arc<Entry>;
 }
 
 impl Storage for &'_ mut AtomStore {
     #[inline(never)]
-    fn insert_entry(self, text: Cow<str>, hash: u32) -> Arc<Entry> {
+    fn insert_entry(self, text: Cow<str>, hash: u64) -> Arc<Entry> {
         let store_id = self.id;
-
-        let entries = self.data.entry(hash).or_insert_with(Default::default);
-
-        // TODO(kdy1): This is extermely slow
-        let existing = no_inline_wrap(|| {
-            entries
-                .iter()
-                .find(|entry| entry.hash == hash && *entry.string == text)
-                .cloned()
-        });
-
-        match existing {
-            Some(existing) => existing,
-            None => {
-                let e = no_inline_wrap(|| {
+        let (entry, _) = self
+            .data
+            .raw_entry_mut()
+            .from_hash(hash, |key| key.hash == hash && *key.string == *text)
+            .or_insert_with(move || {
+                (
                     Arc::new(Entry {
                         string: text.into_owned().into_boxed_str(),
                         hash,
                         store_id,
                         alias: AtomicU64::new(0),
-                    })
-                });
-                let new = e.clone();
-
-                entries.push(e);
-
-                new
-            }
-        }
+                    }),
+                    (),
+                )
+            });
+        entry.clone()
     }
 }
 
 #[inline(never)]
-fn calc_hash(text: &str) -> u32 {
+fn calc_hash(text: &str) -> u64 {
     let mut hasher = FxHasher::default();
     text.hash(&mut hasher);
-    hasher.finish() as u32
+    hasher.finish()
 }
 
-#[inline(never)]
-fn no_inline_wrap<F, Ret>(op: F) -> Ret
-where
-    F: FnOnce() -> Ret,
-{
-    op()
+type BuildEntryHasher = BuildHasherDefault<EntryHasher>;
+
+/// A "no-op" hasher for [Entry] that returns [Entry::hash]. The design is
+/// inspired by the `nohash-hasher` crate.
+///
+/// Assumption: [Arc]'s implementation of [Hash] is a simple pass-through.
+#[derive(Default)]
+pub(crate) struct EntryHasher {
+    hash: u64,
+    #[cfg(debug_assertions)]
+    write_called: bool,
+}
+
+impl Hasher for EntryHasher {
+    fn finish(&self) -> u64 {
+        #[cfg(debug_assertions)]
+        debug_assert!(
+            self.write_called,
+            "EntryHasher expects write_u64 to have been called",
+        );
+        self.hash
+    }
+
+    fn write(&mut self, _bytes: &[u8]) {
+        panic!("EntryHasher expects to be called with write_u64");
+    }
+
+    fn write_u64(&mut self, val: u64) {
+        #[cfg(debug_assertions)]
+        {
+            debug_assert!(
+                !self.write_called,
+                "EntryHasher expects write_u64 to be called only once",
+            );
+            self.write_called = true;
+        }
+
+        self.hash = val;
+    }
 }
