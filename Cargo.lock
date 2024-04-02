@@ -368,7 +368,7 @@ checksum = "d77f7ec81a6d05a3abb01ab6eb7590f6083d08449fe5a1c8b1e620283546ccb7"
 
 [[package]]
 name = "hstr"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "compact_str",
  "criterion",
@@ -387,6 +387,7 @@ dependencies = [
  "smartstring",
  "smol_str",
  "string_cache",
+ "triomphe",
 ]
 
 [[package]]
@@ -932,6 +933,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "stable_deref_trait"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
+
+[[package]]
 name = "static-map-macro"
 version = "0.3.3"
 dependencies = [
@@ -1033,6 +1040,16 @@ name = "tinyvec_macros"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
+
+[[package]]
+name = "triomphe"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "859eb650cfee7434994602c3a68b25d77ad9e68c8a6cd491616ef86661382eb3"
+dependencies = [
+ "serde",
+ "stable_deref_trait",
+]
 
 [[package]]
 name = "unicode-ident"
