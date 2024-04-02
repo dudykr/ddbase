@@ -4,7 +4,7 @@ extern crate dudy_malloc;
 
 #[macro_use]
 extern crate criterion;
-use std::hash::Hash;
+use std::{hash::Hash, mem::forget};
 
 use compact_str::CompactString;
 use criterion::{black_box, BatchSize, BenchmarkId, Criterion};
@@ -266,8 +266,6 @@ fn bench_parallel_creation(c: &mut Criterion) {
                             .collect::<Vec<_>>()
                     },
                     |stores| {
-                        let mut main_store = hstr::AtomStore::default();
-
                         stores
                             .into_par_iter()
                             .map(|mut store| {
@@ -281,7 +279,7 @@ fn bench_parallel_creation(c: &mut Criterion) {
                             .into_iter()
                             .for_each(|(store, atoms)| {
                                 black_box(atoms);
-                                main_store.merge(store);
+                                forget(store);
                             });
                     },
                     BatchSize::SmallInput,
