@@ -15,9 +15,10 @@ harness = false
 name    = "libs"
 
 [features]
-rkyv  = ["dep:rkyv"]
-serde = ["dep:serde"]
-
+rkyv          = ["dep:rkyv"]
+serde         = ["dep:serde"]
+atom_size_64  = []
+atom_size_128 = []
 
 [dependencies]
 hashbrown             = { version = "0.14.3", default-features = false }
