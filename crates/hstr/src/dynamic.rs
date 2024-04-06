@@ -10,7 +10,10 @@ use std::{
 use rustc_hash::FxHasher;
 use triomphe::Arc;
 
-use crate::{tagged_value::{AtomicTaggedValue, TaggedValue, MAX_INLINE_LEN}, Atom, INLINE_TAG_INIT, LEN_OFFSET, TAG_MASK};
+use crate::{
+    tagged_value::{AtomicTaggedValue, TaggedValue, MAX_INLINE_LEN},
+    Atom, INLINE_TAG_INIT, LEN_OFFSET, TAG_MASK,
+};
 
 #[derive(Debug)]
 pub(crate) struct Entry {
@@ -104,10 +107,10 @@ where
         // INLINE_TAG ensures this is never zero
         let tag = INLINE_TAG_INIT | ((len as u8) << LEN_OFFSET);
         let mut unsafe_data = TaggedValue::new_tag(tag);
-        unsafe { unsafe_data.data_mut()[..len].copy_from_slice(text.as_bytes()); }
-        return Atom {
-            unsafe_data,
-        };
+        unsafe {
+            unsafe_data.data_mut()[..len].copy_from_slice(text.as_bytes());
+        }
+        return Atom { unsafe_data };
     }
 
     let hash = calc_hash(&text);
@@ -120,7 +123,7 @@ where
     };
     debug_assert!(0 == ptr.as_ptr() as u8 & TAG_MASK);
     Atom {
-        unsafe_data: TaggedValue::new_ptr(ptr)
+        unsafe_data: TaggedValue::new_ptr(ptr),
     }
 }
 

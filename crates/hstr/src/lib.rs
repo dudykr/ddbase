@@ -2,7 +2,12 @@
 //! See [Atom] for more information.
 
 use std::{
-    fmt::{Debug, Display}, hash::Hash, mem::{self, forget}, num::NonZeroU8, ops::Deref, sync::atomic::Ordering::SeqCst
+    fmt::{Debug, Display},
+    hash::Hash,
+    mem::{self, forget},
+    num::NonZeroU8,
+    ops::Deref,
+    sync::atomic::Ordering::SeqCst,
 };
 
 use debug_unreachable::debug_unreachable;
