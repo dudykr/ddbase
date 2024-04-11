@@ -4,6 +4,7 @@ use debug_unreachable::debug_unreachable;
 
 use self::{inline::InlineBuffer, nonmax::NonMaxUsize, static_ref::StaticStr};
 
+mod capacity;
 mod heap;
 mod inline;
 mod interned;
@@ -27,6 +28,9 @@ const KIND_INTERNED: u8 = 0b01;
 const KIND_HEAP: u8 = 0b10;
 const KIND_STATIC: u8 = 0b11;
 const KIND_MASK: u8 = 0b11;
+
+/// Used as a discriminant to identify different variants
+const HEAP_MASK: u8 = 0b11111110;
 
 impl Repr {
     #[inline]
