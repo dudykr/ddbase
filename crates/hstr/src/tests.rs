@@ -22,6 +22,35 @@ fn simple_usage() {
 }
 
 #[test]
+fn store_merge_and_drop() {
+    let (mut s1, atoms1) = store_with_atoms(vec!["Hello, world!!!!"]);
+    let a1 = atoms1.into_iter().next().unwrap();
+    assert_eq!(2, a1.ref_count());
+    let (mut s2, atoms2) = store_with_atoms(vec!["Hello, world!!!!"]);
+    let a2 = atoms2.into_iter().next().unwrap();
+    let (s3, atoms3) = store_with_atoms(vec!["Hello, world!!!!"]);
+    let a3 = atoms3.into_iter().next().unwrap();
+    s2.merge(s3);
+    assert_eq!(2, a1.ref_count());
+    s1.merge(s2);
+    assert_eq!(3, a1.ref_count());
+
+    assert_eq!("Hello, world!!!!", a1.as_str());
+    assert_eq!("Hello, world!!!!", a2.as_str());
+    assert_eq!("Hello, world!!!!", a3.as_str());
+
+    drop(s1);
+    assert_eq!(2, a1.ref_count());
+
+    assert_eq!("Hello, world!!!!", a1.as_str());
+    assert_eq!(a1, a2);
+    drop(a1);
+    assert_eq!(a2, a3);
+    assert_eq!("Hello, world!!!!", a2.as_str());
+    assert_eq!("Hello, world!!!!", a3.as_str());
+}
+
+#[test]
 fn eager_drop() {
     let (_, atoms1) = store_with_atoms(vec!["Hello, world!!!!"]);
     let (_, atoms2) = store_with_atoms(vec!["Hello, world!!!!"]);
