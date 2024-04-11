@@ -1,8 +1,10 @@
+use std::ptr;
+
 use super::{capacity::Capacity, Repr};
 
 #[repr(C)]
 pub(super) struct StaticStr {
-    ptr: *const u8,
+    ptr: ptr::NonNull<u8>,
     len: Capacity,
 }
 
@@ -13,7 +15,7 @@ impl StaticStr {
         let len = Capacity::new(text.len());
 
         Self {
-            ptr: text.as_ptr(),
+            ptr: ptr::NonNull::new_unchecked(text as *const str as *mut u8),
             len,
         }
     }
@@ -23,6 +25,8 @@ impl StaticStr {
     }
 
     pub fn as_str(&self) -> &str {
-        unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(self.ptr, self.len())) }
+        unsafe {
+            std::str::from_utf8_unchecked(std::slice::from_raw_parts(self.ptr.as_ptr(), self.len()))
+        }
     }
 }

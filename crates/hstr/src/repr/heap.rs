@@ -15,7 +15,7 @@ static_assertions::assert_eq_size!(HeapStr, Repr);
 impl HeapStr {
     pub unsafe fn new(text: &str) -> Self {
         let len = Capacity::new(text.len());
-        let ptr = NonNull::new(text as *const str as *mut u8).unwrap();
+        let ptr = NonNull::new_unchecked(text as *const str as *mut u8);
         Self { ptr, len }
     }
 
