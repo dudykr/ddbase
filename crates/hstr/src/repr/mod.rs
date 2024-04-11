@@ -22,4 +22,21 @@ pub struct Repr(
 unsafe impl Send for Repr {}
 unsafe impl Sync for Repr {}
 
+const KIND_INLINED: u8 = 0b00;
+const KIND_INTERNED: u8 = 0b01;
+const KIND_HEAP: u8 = 0b10;
+const KIND_STATIC: u8 = 0b11;
+const KIND_MASK: u8 = 0b11;
+
+impl Repr {
+    #[inline]
+    pub fn new_static(text: &'static str) -> Self {}
+
+    #[inline]
+    pub fn new_dynamic(text: &str) -> Self {}
+
+    #[inline]
+    pub fn new_interned(text: &str) -> Self {}
+}
+
 static_assertions::assert_eq_size!(Repr, Option<Repr>, [usize; 2]);
