@@ -22,4 +22,4 @@ pub struct Repr(
 unsafe impl Send for Repr {}
 unsafe impl Sync for Repr {}
 
-static_assertions::assert_eq_size!(Repr, [usize; 2]);
+static_assertions::assert_eq_size!(Repr, Option<Repr>, [usize; 2]);
