@@ -1,8 +1,11 @@
-use std::mem::size_of;
+use std::mem::{size_of, transmute};
 
 use debug_unreachable::debug_unreachable;
 
-use self::{heap::HeapStr, inline::InlineBuffer, nonmax::NonMaxUsize, static_ref::StaticStr};
+use self::{
+    heap::HeapStr, inline::InlineBuffer, interned::Interned, nonmax::NonMaxUsize,
+    static_ref::StaticStr,
+};
 
 mod capacity;
 mod heap;
@@ -148,3 +151,39 @@ impl Repr {
 }
 
 static_assertions::assert_eq_size!(Repr, Option<Repr>, [usize; 2]);
+
+impl Drop for Repr {
+    #[inline]
+    fn drop(&mut self) {
+        // By "outlining" the actual Drop code and only calling it if we're a heap
+        // variant, it allows dropping an inline variant to be as cheap as
+        // possible.
+        match self.kind() {
+            KIND_HEAP | KIND_INLINED => outlined_drop(self),
+            _ => {}
+        }
+
+        #[cold]
+        fn outlined_drop(this: &mut Repr) {
+            match this.kind() {
+                KIND_HEAP => {
+                    let repr = unsafe {
+                        // SAFETY: We just checked the discriminant to make sure we're heap
+                        // allocated
+                        transmute::<&mut Repr, &mut HeapStr>(this)
+                    };
+                    repr.dealloc();
+                }
+                KIND_INTERNED => {
+                    let repr = unsafe {
+                        // SAFETY: We just checked the discriminant to make sure
+                        // we're heap allocated
+                        transmute::<&mut Repr, &mut Interned>(this)
+                    };
+                    repr.dealloc();
+                }
+                _ => unsafe { debug_unreachable!("Invalid kind in Repr::drop()") },
+            }
+        }
+    }
+}
