@@ -1,4 +1,4 @@
-use self::nonmax::NonMaxUsize;
+use self::{nonmax::NonMaxUsize, static_ref::StaticStr};
 
 mod heap;
 mod inline;
@@ -24,7 +24,14 @@ const KIND_MASK: u8 = 0b11;
 
 impl Repr {
     #[inline]
-    pub fn new_static(text: &'static str) -> Self {}
+    pub fn new_static(text: &'static str) -> Self {
+        let repr = StaticStr::new(text);
+        let repr = unsafe { std::mem::transmute::<StaticStr, Repr>(repr) };
+
+        debug_assert_eq!(repr.kind(), KIND_STATIC);
+
+        repr
+    }
 
     #[inline]
     pub fn new_dynamic(text: &str) -> Self {}
