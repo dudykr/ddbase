@@ -1,22 +1,16 @@
-use self::nonmax_u8::NonMaxU8;
+use self::nonmax::NonMaxUsize;
 
 mod heap;
 mod inline;
 mod interned;
-mod nonmax_u8;
+mod nonmax;
 mod static_ref;
 
 #[repr(C)]
 pub struct Repr(
     // We have a pointer in the repesentation to properly carry provenance
     *const u8,
-    // Then we need one `usize` (aka WORDs) of data
-    // ...but we breakup into multiple pieces...
-    #[cfg(target_pointer_width = "64")] u32,
-    u16,
-    u8,
-    // ...so that the last byte can be a NonMax, which allows the compiler to see a niche value
-    NonMaxU8,
+    NonMaxUsize,
 );
 
 unsafe impl Send for Repr {}
@@ -48,16 +42,7 @@ impl Repr {
     }
 
     fn last_byte(&self) -> u8 {
-        cfg_if::cfg_if! {
-            if #[cfg(target_pointer_width = "64")] {
-                let last_byte = self.4;
-            } else if #[cfg(target_pointer_width = "32")] {
-                let last_byte = self.3;
-            } else {
-                compile_error!("Unsupported target_pointer_width");
-            }
-        };
-        last_byte as u8
+        self.1.last_byte()
     }
 }
 

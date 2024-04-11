@@ -1,3 +1,31 @@
+#[repr(C)]
+pub struct NonMaxUsize(
+    // Then we need one `usize` (aka WORDs) of data
+    // ...but we breakup into multiple pieces...
+    #[cfg(target_pointer_width = "64")] u32,
+    u16,
+    u8,
+    // ...so that the last byte can be a NonMax, which allows the compiler to see a niche value
+    NonMaxU8,
+);
+
+static_assertions::assert_eq_size!(NonMaxUsize, Option<NonMaxUsize>, usize);
+
+impl NonMaxUsize {
+    pub const fn last_byte(self) -> u8 {
+        cfg_if::cfg_if! {
+            if #[cfg(target_pointer_width = "64")] {
+                let last_byte = self.3;
+            } else if #[cfg(target_pointer_width = "32")] {
+                let last_byte = self.2;
+            } else {
+                compile_error!("Unsupported target_pointer_width");
+            }
+        };
+        last_byte as u8
+    }
+}
+
 /// [`NonMaxU8`] is an unsigned 8-bit integer data type that has a valid range
 /// of `[0, 254]`. Excluding `255` allows the Rust compiler to use `255` as a
 /// niche.
