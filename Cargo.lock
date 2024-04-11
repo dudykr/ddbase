@@ -370,6 +370,7 @@ checksum = "d77f7ec81a6d05a3abb01ab6eb7590f6083d08449fe5a1c8b1e620283546ccb7"
 name = "hstr"
 version = "0.2.9"
 dependencies = [
+ "cfg-if",
  "compact_str",
  "criterion",
  "dudy-malloc",
