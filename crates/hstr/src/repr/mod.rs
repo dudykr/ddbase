@@ -9,7 +9,7 @@ mod static_ref;
 #[repr(C)]
 pub struct Repr(
     // We have a pointer in the repesentation to properly carry provenance
-    *const (),
+    *const u8,
     // Then we need one `usize` (aka WORDs) of data
     // ...but we breakup into multiple pieces...
     #[cfg(target_pointer_width = "64")] u32,
@@ -37,6 +37,28 @@ impl Repr {
 
     #[inline]
     pub fn new_interned(text: &str) -> Self {}
+
+    fn len(&self) -> usize {}
+
+    fn as_str(&self) -> &str {}
+
+    #[inline]
+    fn kind(&self) -> u8 {
+        self.last_byte() & KIND_MASK
+    }
+
+    fn last_byte(&self) -> u8 {
+        cfg_if::cfg_if! {
+            if #[cfg(target_pointer_width = "64")] {
+                let last_byte = self.4;
+            } else if #[cfg(target_pointer_width = "32")] {
+                let last_byte = self.3;
+            } else {
+                compile_error!("Unsupported target_pointer_width");
+            }
+        };
+        last_byte as u8
+    }
 }
 
 static_assertions::assert_eq_size!(Repr, Option<Repr>, [usize; 2]);
