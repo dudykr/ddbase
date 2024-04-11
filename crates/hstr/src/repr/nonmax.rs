@@ -24,6 +24,10 @@ impl NonMaxUsize {
         unsafe { transmute(value) }
     }
 
+    pub fn as_usize(self) -> usize {
+        unsafe { transmute(self) }
+    }
+
     pub const fn last_byte(self) -> u8 {
         cfg_if::cfg_if! {
             if #[cfg(target_pointer_width = "64")] {

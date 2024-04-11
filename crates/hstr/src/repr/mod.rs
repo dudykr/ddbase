@@ -1,3 +1,5 @@
+use debug_unreachable::debug_unreachable;
+
 use self::{nonmax::NonMaxUsize, static_ref::StaticStr};
 
 mod heap;
@@ -39,7 +41,18 @@ impl Repr {
     #[inline]
     pub fn new_interned(text: &str) -> Self {}
 
-    fn len(&self) -> usize {}
+    fn len(&self) -> usize {
+        match self.kind() {
+            KIND_INLINED => {}
+            KIND_HEAP => {}
+            KIND_STATIC => {
+                let repr = unsafe { std::mem::transmute::<Repr, StaticStr>(*self) };
+                repr.len()
+            }
+            KIND_INTERNED => {}
+            _ => unsafe { debug_unreachable!("Invalid kind in Repr::len()") },
+        }
+    }
 
     fn as_str(&self) -> &str {}
 

@@ -20,4 +20,12 @@ impl StaticStr {
             len,
         }
     }
+
+    pub fn len(&self) -> usize {
+        self.len.as_usize() >> 2
+    }
+
+    pub fn as_str(&self) -> &str {
+        unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(self.ptr, self.len())) }
+    }
 }
