@@ -28,6 +28,7 @@ phf                   = "0.11.2"
 rkyv                  = { version = "0.7.42", optional = true }
 rustc-hash            = "1.1.0"
 serde                 = { version = "1.0.192", optional = true }
+static_assertions = "1.1.0"
 triomphe              = "0.1.11"
 
 [dev-dependencies]
