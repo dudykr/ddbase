@@ -36,11 +36,16 @@ impl Repr {
     #[inline]
     pub fn new_static(text: &'static str) -> Self {
         let repr = unsafe { StaticStr::new(text) };
+
+        debug_assert_eq!(repr.len(), text.len());
+
         let repr = unsafe { std::mem::transmute::<StaticStr, Repr>(repr) };
+
+        debug_assert_eq!(repr.kind(), KIND_STATIC);
+        debug_assert_eq!(repr.len(), text.len());
 
         if cfg!(feature = "debug") {
             assert_eq!(repr.as_str(), text);
-            assert_eq!(repr.kind(), KIND_STATIC);
         }
 
         repr
@@ -56,44 +61,81 @@ impl Repr {
 
         if len < MAX_SIZE {
             let repr = unsafe { InlineBuffer::new(text) };
+
+            debug_assert_eq!(repr.len(), text.len());
+
             let repr = unsafe { std::mem::transmute::<InlineBuffer, Repr>(repr) };
+
+            debug_assert_eq!(repr.kind(), KIND_INLINED);
+            debug_assert_eq!(repr.len(), text.len());
 
             if cfg!(feature = "debug") {
                 assert_eq!(repr.as_str(), text);
-                assert_eq!(repr.kind(), KIND_INLINED);
             }
 
             repr
         } else {
             let repr = unsafe { heap::HeapStr::new(text) };
+
+            debug_assert_eq!(repr.len(), text.len());
+
             let repr = unsafe { std::mem::transmute::<heap::HeapStr, Repr>(repr) };
+
+            debug_assert_eq!(repr.kind(), KIND_HEAP);
+            debug_assert_eq!(repr.len(), text.len());
 
             if cfg!(feature = "debug") {
                 assert_eq!(repr.as_str(), text);
-                assert_eq!(repr.kind(), KIND_HEAP);
             }
 
             repr
         }
     }
 
-    #[inline]
-    pub fn new_interned(text: &str) -> Self {}
+    // #[inline]
+    // pub fn new_interned(text: &str) -> Self {}
 
     fn len(&self) -> usize {
         match self.kind() {
-            KIND_INLINED => {}
-            KIND_HEAP => {}
+            KIND_INLINED => {
+                let repr = unsafe { std::mem::transmute::<Repr, InlineBuffer>(*self) };
+                repr.len()
+            }
+            KIND_HEAP => {
+                let repr = unsafe { std::mem::transmute::<Repr, heap::HeapStr>(*self) };
+                repr.len()
+            }
             KIND_STATIC => {
                 let repr = unsafe { std::mem::transmute::<Repr, StaticStr>(*self) };
                 repr.len()
             }
-            KIND_INTERNED => {}
+            KIND_INTERNED => {
+                todo!("Repr::len() for interned strings")
+            }
             _ => unsafe { debug_unreachable!("Invalid kind in Repr::len()") },
         }
     }
 
-    fn as_str(&self) -> &str {}
+    fn as_str(&self) -> &str {
+        match self.kind() {
+            KIND_INLINED => {
+                let repr = unsafe { std::mem::transmute::<Repr, InlineBuffer>(*self) };
+                repr.as_str()
+            }
+            KIND_HEAP => {
+                let repr = unsafe { std::mem::transmute::<Repr, heap::HeapStr>(*self) };
+                repr.as_str()
+            }
+            KIND_STATIC => {
+                let repr = unsafe { std::mem::transmute::<Repr, StaticStr>(*self) };
+                repr.as_str()
+            }
+            KIND_INTERNED => {
+                todo!("Repr::as_str() for interned strings")
+            }
+            _ => unsafe { debug_unreachable!("Invalid kind in Repr::as_str()") },
+        }
+    }
 
     #[inline]
     fn kind(&self) -> u8 {

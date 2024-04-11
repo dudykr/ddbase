@@ -13,4 +13,12 @@ impl HeapStr {
         let ptr = text.as_ptr();
         Self { ptr, len }
     }
+
+    pub fn len(&self) -> usize {
+        unsafe { self.len.as_usize() }
+    }
+
+    pub fn as_str(&self) -> &str {
+        unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(self.ptr, self.len())) }
+    }
 }
