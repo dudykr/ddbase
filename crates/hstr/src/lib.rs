@@ -1,23 +1,25 @@
+#![cfg_attr(feature = "atom_size_128", feature(integer_atomics))]
 //! See [Atom] for more information.
 
 use std::{
     fmt::{Debug, Display},
     hash::Hash,
     mem::{self, forget},
-    num::NonZeroU64,
+    num::NonZeroU8,
     ops::Deref,
-    slice,
     sync::atomic::Ordering::SeqCst,
 };
 
 use debug_unreachable::debug_unreachable;
 use once_cell::sync::Lazy;
+use tagged_value::TaggedValue;
 
 pub use crate::dynamic::AtomStore;
 use crate::dynamic::Entry;
 
 mod dynamic;
 mod global_store;
+mod tagged_value;
 #[cfg(test)]
 mod tests;
 
@@ -51,9 +53,11 @@ mod tests;
 ///
 /// ```rust
 /// # use std::mem::size_of;
+/// # if !cfg!(feature = "atom_size_128") {
 /// use hstr::Atom;
 /// assert!(size_of::<Atom>() == size_of::<u64>());
 /// assert!(size_of::<Option<Atom>>() == size_of::<u64>());
+/// # }
 /// ````
 ///
 ///
@@ -87,7 +91,7 @@ mod tests;
 
 pub struct Atom {
     // If this Atom is a dynamic one, this is *const Entry
-    unsafe_data: NonZeroU64,
+    unsafe_data: TaggedValue,
 }
 
 #[doc(hidden)]
@@ -152,12 +156,12 @@ impl<'de> serde::de::Deserialize<'de> for Atom {
 }
 const DYNAMIC_TAG: u8 = 0b_00;
 const INLINE_TAG: u8 = 0b_01; // len in upper nybble
+const INLINE_TAG_INIT: NonZeroU8 = unsafe { NonZeroU8::new_unchecked(INLINE_TAG) };
 const STATIC_TAG: u8 = 0b_10;
-const TAG_MASK: u64 = 0b_11;
-const LEN_OFFSET: u64 = 4;
-const LEN_MASK: u64 = 0xf0;
+const TAG_MASK: u8 = 0b_11;
+const LEN_OFFSET: usize = 4;
+const LEN_MASK: u8 = 0xf0;
 
-const MAX_INLINE_LEN: usize = 7;
 // const STATIC_SHIFT_BITS: usize = 32;
 
 impl Atom {
@@ -171,7 +175,7 @@ impl Atom {
 
     #[inline(always)]
     fn tag(&self) -> u8 {
-        (self.unsafe_data.get() & TAG_MASK) as u8
+        self.unsafe_data.tag() & TAG_MASK
     }
 
     /// Return true if this is a dynamic Atom.
@@ -234,7 +238,7 @@ impl Atom {
             INLINE_TAG => {
                 // This is passed as input to the caller's `Hasher` implementation, so it's okay
                 // that this isn't really a hash
-                self.unsafe_data.get()
+                self.unsafe_data.hash()
             }
             _ => unsafe { debug_unreachable!() },
         }
@@ -248,8 +252,8 @@ impl Atom {
                 todo!("static as_str")
             }
             INLINE_TAG => {
-                let len = (self.unsafe_data.get() & LEN_MASK) >> LEN_OFFSET;
-                let src = inline_atom_slice(&self.unsafe_data);
+                let len = (self.unsafe_data.tag() & LEN_MASK) >> LEN_OFFSET;
+                let src = self.unsafe_data.data();
                 unsafe { std::str::from_utf8_unchecked(&src[..(len as usize)]) }
             }
             _ => unsafe { debug_unreachable!() },
@@ -281,7 +285,7 @@ impl Atom {
             // This is slow, but we don't reach here in most cases
             let te = unsafe { Entry::deref_from(self.unsafe_data) };
 
-            if let Some(self_alias) = NonZeroU64::new(te.alias.load(SeqCst)) {
+            if let Some(self_alias) = te.alias.load(SeqCst) {
                 if let Some(result) = other.simple_eq(&Atom::from_alias(self_alias)) {
                     return Some(result);
                 }
@@ -290,7 +294,7 @@ impl Atom {
 
         if other.is_dynamic() {
             let oe = unsafe { Entry::deref_from(other.unsafe_data) };
-            if let Some(other_alias) = NonZeroU64::new(oe.alias.load(SeqCst)) {
+            if let Some(other_alias) = oe.alias.load(SeqCst) {
                 if let Some(result) = self.simple_eq(&Atom::from_alias(other_alias)) {
                     return Some(result);
                 }
@@ -359,8 +363,8 @@ impl Clone for Atom {
 
 impl Atom {
     #[inline]
-    pub(crate) fn from_alias(alias: NonZeroU64) -> Self {
-        if (alias.get() & TAG_MASK) as u8 == DYNAMIC_TAG {
+    pub(crate) fn from_alias(alias: TaggedValue) -> Self {
+        if alias.tag() & TAG_MASK == DYNAMIC_TAG {
             unsafe {
                 let arc = Entry::restore_arc(alias);
                 forget(arc.clone());
@@ -439,35 +443,5 @@ where
         let s: String = self.deserialize(deserializer)?;
 
         Ok(Atom::new(s))
-    }
-}
-
-#[inline(always)]
-fn inline_atom_slice(x: &NonZeroU64) -> &[u8] {
-    unsafe {
-        let x: *const NonZeroU64 = x;
-        let mut data = x as *const u8;
-        // All except the lowest byte, which is first in little-endian, last in
-        // big-endian.
-        if cfg!(target_endian = "little") {
-            data = data.offset(1);
-        }
-        let len = 7;
-        slice::from_raw_parts(data, len)
-    }
-}
-
-#[inline(always)]
-fn inline_atom_slice_mut(x: &mut u64) -> &mut [u8] {
-    unsafe {
-        let x: *mut u64 = x;
-        let mut data = x as *mut u8;
-        // All except the lowest byte, which is first in little-endian, last in
-        // big-endian.
-        if cfg!(target_endian = "little") {
-            data = data.offset(1);
-        }
-        let len = 7;
-        slice::from_raw_parts_mut(data, len)
     }
 }

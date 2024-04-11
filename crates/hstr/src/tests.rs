@@ -23,8 +23,8 @@ fn simple_usage() {
 
 #[test]
 fn eager_drop() {
-    let (_, atoms1) = store_with_atoms(vec!["Hello, world!"]);
-    let (_, atoms2) = store_with_atoms(vec!["Hello, world!"]);
+    let (_, atoms1) = store_with_atoms(vec!["Hello, world!!!!"]);
+    let (_, atoms2) = store_with_atoms(vec!["Hello, world!!!!"]);
 
     dbg!(&atoms1);
     dbg!(&atoms2);
@@ -42,8 +42,8 @@ fn eager_drop() {
 
 #[test]
 fn store_multiple() {
-    let (_s1, atoms1) = store_with_atoms(vec!["Hello, world!"]);
-    let (_s2, atoms2) = store_with_atoms(vec!["Hello, world!"]);
+    let (_s1, atoms1) = store_with_atoms(vec!["Hello, world!!!!"]);
+    let (_s2, atoms2) = store_with_atoms(vec!["Hello, world!!!!"]);
 
     let a1 = atoms1[0].clone();
     let a2 = atoms2[0].clone();
@@ -58,8 +58,8 @@ fn store_multiple() {
 
 #[test]
 fn store_merge_two() {
-    let (mut s1, atoms1) = store_with_atoms(vec!["Hello, world!"]);
-    let (s2, atoms2) = store_with_atoms(vec!["Hello, world!"]);
+    let (mut s1, atoms1) = store_with_atoms(vec!["Hello, world!!!!"]);
+    let (s2, atoms2) = store_with_atoms(vec!["Hello, world!!!!"]);
 
     let a1 = atoms1[0].clone();
     let a2 = atoms2[0].clone();
@@ -68,7 +68,7 @@ fn store_merge_two() {
 
     s1.merge(s2);
 
-    let a3 = s1.atom("Hello, world!");
+    let a3 = s1.atom("Hello, world!!!!");
 
     assert_eq!(
         a1.unsafe_data, a3.unsafe_data,
@@ -90,8 +90,8 @@ fn store_merge_two() {
 
 #[test]
 fn store_merge_many_1() {
-    let (mut s1, atoms1) = store_with_atoms(vec!["Hello, world!"]);
-    let (s2, atoms2) = store_with_atoms(vec!["Hello, world!"]);
+    let (mut s1, atoms1) = store_with_atoms(vec!["Hello, world!!!!"]);
+    let (s2, atoms2) = store_with_atoms(vec!["Hello, world!!!!"]);
     let (s3, atoms3) = store_with_atoms(vec!["Hi!"]);
 
     let a1 = atoms1[0].clone();
@@ -108,7 +108,7 @@ fn store_merge_many_1() {
     s1.merge(s2);
     s1.merge(s3);
 
-    let a4 = s1.atom("Hello, world!");
+    let a4 = s1.atom("Hello, world!!!!");
 
     assert_eq!(
         a1.unsafe_data, a4.unsafe_data,

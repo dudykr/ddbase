@@ -2,35 +2,38 @@ use std::{
     borrow::Cow,
     fmt::Debug,
     hash::{BuildHasherDefault, Hash, Hasher},
-    num::{NonZeroU32, NonZeroU64},
+    num::NonZeroU32,
     ptr::NonNull,
-    sync::atomic::{AtomicU32, AtomicU64, Ordering::SeqCst},
+    sync::atomic::{AtomicU32, Ordering::SeqCst},
 };
 
 use rustc_hash::FxHasher;
 use triomphe::Arc;
 
-use crate::{inline_atom_slice_mut, Atom, INLINE_TAG, LEN_OFFSET, MAX_INLINE_LEN, TAG_MASK};
+use crate::{
+    tagged_value::{AtomicTaggedValue, TaggedValue, MAX_INLINE_LEN},
+    Atom, INLINE_TAG_INIT, LEN_OFFSET, TAG_MASK,
+};
 
 #[derive(Debug)]
 pub(crate) struct Entry {
     pub string: Box<str>,
     pub hash: u64,
     pub store_id: Option<NonZeroU32>,
-    pub alias: AtomicU64,
+    pub alias: AtomicTaggedValue,
 }
 
 impl Entry {
-    pub unsafe fn cast(ptr: NonZeroU64) -> *const Entry {
-        ptr.get() as *const Entry
+    pub unsafe fn cast(ptr: TaggedValue) -> *const Entry {
+        ptr.get_ptr().cast()
     }
 
-    pub unsafe fn deref_from<'i>(ptr: NonZeroU64) -> &'i Entry {
+    pub unsafe fn deref_from<'i>(ptr: TaggedValue) -> &'i Entry {
         &*Self::cast(ptr)
     }
 
-    pub unsafe fn restore_arc(v: NonZeroU64) -> Arc<Entry> {
-        let ptr = v.get() as *const Entry;
+    pub unsafe fn restore_arc(v: TaggedValue) -> Arc<Entry> {
+        let ptr = v.get_ptr() as *const Entry;
         Arc::from_raw(ptr)
     }
 }
@@ -82,7 +85,7 @@ impl AtomStore {
 
             let ptr = unsafe { NonNull::new_unchecked(Arc::as_ptr(&cur_entry) as *mut Entry) };
 
-            entry.alias.store(ptr.as_ptr() as u64, SeqCst);
+            entry.alias.store(TaggedValue::new_ptr(ptr), SeqCst);
         }
     }
 
@@ -101,15 +104,13 @@ where
     let len = text.len();
 
     if len < MAX_INLINE_LEN {
-        let mut data: u64 = (INLINE_TAG as u64) | ((len as u64) << LEN_OFFSET);
-        {
-            let dest = inline_atom_slice_mut(&mut data);
-            dest[..len].copy_from_slice(text.as_bytes())
+        // INLINE_TAG ensures this is never zero
+        let tag = INLINE_TAG_INIT | ((len as u8) << LEN_OFFSET);
+        let mut unsafe_data = TaggedValue::new_tag(tag);
+        unsafe {
+            unsafe_data.data_mut()[..len].copy_from_slice(text.as_bytes());
         }
-        return Atom {
-            // INLINE_TAG ensures this is never zero
-            unsafe_data: unsafe { NonZeroU64::new_unchecked(data) },
-        };
+        return Atom { unsafe_data };
     }
 
     let hash = calc_hash(&text);
@@ -120,11 +121,9 @@ where
         // Safety: Arc::into_raw returns a non-null pointer
         NonNull::new_unchecked(entry as *mut Entry)
     };
-    let data = ptr.as_ptr() as u64;
-
-    debug_assert!(0 == data & TAG_MASK);
+    debug_assert!(0 == ptr.as_ptr() as u8 & TAG_MASK);
     Atom {
-        unsafe_data: unsafe { NonZeroU64::new_unchecked(data) },
+        unsafe_data: TaggedValue::new_ptr(ptr),
     }
 }
 
@@ -146,7 +145,7 @@ impl Storage for &'_ mut AtomStore {
                         string: text.into_owned().into_boxed_str(),
                         hash,
                         store_id,
-                        alias: AtomicU64::new(0),
+                        alias: AtomicTaggedValue::default(),
                     }),
                     (),
                 )
