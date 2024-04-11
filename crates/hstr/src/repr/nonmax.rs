@@ -1,3 +1,5 @@
+use std::mem::transmute;
+
 #[repr(C)]
 pub struct NonMaxUsize(
     // Then we need one `usize` (aka WORDs) of data
@@ -12,6 +14,16 @@ pub struct NonMaxUsize(
 static_assertions::assert_eq_size!(NonMaxUsize, Option<NonMaxUsize>, usize);
 
 impl NonMaxUsize {
+    pub fn new(value: usize) -> Self {
+        debug_assert_ne!(
+            value,
+            usize::MAX,
+            "NonMaxUsize::new(usize::MAX) is not allowed"
+        );
+
+        unsafe { transmute(value) }
+    }
+
     pub const fn last_byte(self) -> u8 {
         cfg_if::cfg_if! {
             if #[cfg(target_pointer_width = "64")] {
