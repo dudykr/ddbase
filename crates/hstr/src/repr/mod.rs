@@ -1,12 +1,16 @@
+use std::mem::size_of;
+
 use debug_unreachable::debug_unreachable;
 
-use self::{nonmax::NonMaxUsize, static_ref::StaticStr};
+use self::{inline::InlineBuffer, nonmax::NonMaxUsize, static_ref::StaticStr};
 
 mod heap;
 mod inline;
 mod interned;
 mod nonmax;
 mod static_ref;
+
+const MAX_SIZE: usize = size_of::<Repr>();
 
 #[repr(C)]
 pub struct Repr(
@@ -27,16 +31,47 @@ const KIND_MASK: u8 = 0b11;
 impl Repr {
     #[inline]
     pub fn new_static(text: &'static str) -> Self {
-        let repr = StaticStr::new(text);
+        let repr = unsafe { StaticStr::new(text) };
         let repr = unsafe { std::mem::transmute::<StaticStr, Repr>(repr) };
 
-        debug_assert_eq!(repr.kind(), KIND_STATIC);
+        if cfg!(feature = "debug") {
+            assert_eq!(repr.as_str(), text);
+            assert_eq!(repr.kind(), KIND_STATIC);
+        }
 
         repr
     }
 
     #[inline]
-    pub fn new_dynamic(text: &str) -> Self {}
+    pub fn new_dynamic(text: &str) -> Self {
+        let len = text.len();
+
+        if len == 0 {
+            return Self::new_static("");
+        }
+
+        if len < MAX_SIZE {
+            let repr = unsafe { InlineBuffer::new(text) };
+            let repr = unsafe { std::mem::transmute::<InlineBuffer, Repr>(repr) };
+
+            if cfg!(feature = "debug") {
+                assert_eq!(repr.as_str(), text);
+                assert_eq!(repr.kind(), KIND_INLINED);
+            }
+
+            repr
+        } else {
+            let repr = unsafe { heap::HeapStr::new(text) };
+            let repr = unsafe { std::mem::transmute::<heap::HeapStr, Repr>(repr) };
+
+            if cfg!(feature = "debug") {
+                assert_eq!(repr.as_str(), text);
+                assert_eq!(repr.kind(), KIND_HEAP);
+            }
+
+            repr
+        }
+    }
 
     #[inline]
     pub fn new_interned(text: &str) -> Self {}
