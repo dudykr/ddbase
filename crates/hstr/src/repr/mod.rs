@@ -2,7 +2,7 @@ use std::mem::size_of;
 
 use debug_unreachable::debug_unreachable;
 
-use self::{inline::InlineBuffer, nonmax::NonMaxUsize, static_ref::StaticStr};
+use self::{heap::HeapStr, inline::InlineBuffer, nonmax::NonMaxUsize, static_ref::StaticStr};
 
 mod capacity;
 mod heap;
@@ -75,11 +75,11 @@ impl Repr {
 
             repr
         } else {
-            let repr = unsafe { heap::HeapStr::new(text) };
+            let repr = unsafe { HeapStr::new(text) };
 
             debug_assert_eq!(repr.len(), text.len());
 
-            let repr = unsafe { std::mem::transmute::<heap::HeapStr, Repr>(repr) };
+            let repr = unsafe { std::mem::transmute::<HeapStr, Repr>(repr) };
 
             debug_assert_eq!(repr.kind(), KIND_HEAP);
             debug_assert_eq!(repr.len(), text.len());
@@ -98,15 +98,15 @@ impl Repr {
     fn len(&self) -> usize {
         match self.kind() {
             KIND_INLINED => {
-                let repr = unsafe { std::mem::transmute::<Repr, InlineBuffer>(*self) };
+                let repr = unsafe { std::mem::transmute::<&Repr, &InlineBuffer>(self) };
                 repr.len()
             }
             KIND_HEAP => {
-                let repr = unsafe { std::mem::transmute::<Repr, heap::HeapStr>(*self) };
+                let repr = unsafe { std::mem::transmute::<&Repr, &HeapStr>(self) };
                 repr.len()
             }
             KIND_STATIC => {
-                let repr = unsafe { std::mem::transmute::<Repr, StaticStr>(*self) };
+                let repr = unsafe { std::mem::transmute::<&Repr, &StaticStr>(self) };
                 repr.len()
             }
             KIND_INTERNED => {
@@ -119,15 +119,15 @@ impl Repr {
     fn as_str(&self) -> &str {
         match self.kind() {
             KIND_INLINED => {
-                let repr = unsafe { std::mem::transmute::<Repr, InlineBuffer>(*self) };
+                let repr = unsafe { std::mem::transmute::<&Repr, &InlineBuffer>(self) };
                 repr.as_str()
             }
             KIND_HEAP => {
-                let repr = unsafe { std::mem::transmute::<Repr, heap::HeapStr>(*self) };
+                let repr = unsafe { std::mem::transmute::<&Repr, &HeapStr>(self) };
                 repr.as_str()
             }
             KIND_STATIC => {
-                let repr = unsafe { std::mem::transmute::<Repr, StaticStr>(*self) };
+                let repr = unsafe { std::mem::transmute::<&Repr, &StaticStr>(self) };
                 repr.as_str()
             }
             KIND_INTERNED => {

@@ -1,6 +1,7 @@
 use std::mem::transmute;
 
 #[repr(C)]
+#[derive(Copy, Clone, Debug)]
 pub struct NonMaxUsize(
     // Then we need one `usize` (aka WORDs) of data
     // ...but we breakup into multiple pieces...
