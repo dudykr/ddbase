@@ -4,7 +4,10 @@ use std::{
     hash::{BuildHasherDefault, Hash, Hasher},
     num::NonZeroU32,
     ptr::NonNull,
-    sync::atomic::{AtomicU32, Ordering::SeqCst},
+    sync::atomic::{
+        AtomicU32,
+        Ordering::{self, SeqCst},
+    },
 };
 
 use rustc_hash::FxHasher;
@@ -23,6 +26,16 @@ pub(crate) struct Entry {
     pub alias: AtomicTaggedValue,
 }
 
+impl Drop for Entry {
+    fn drop(&mut self) {
+        if let Some(old) = self.alias.load(Ordering::SeqCst) {
+            unsafe {
+                Self::restore_arc(old);
+            }
+        }
+    }
+}
+
 impl Entry {
     pub unsafe fn cast(ptr: TaggedValue) -> *const Entry {
         ptr.get_ptr().cast()
@@ -30,6 +43,14 @@ impl Entry {
 
     pub unsafe fn deref_from<'i>(ptr: TaggedValue) -> &'i Entry {
         &*Self::cast(ptr)
+    }
+
+    #[cfg(test)]
+    pub unsafe fn ref_count(ptr: TaggedValue) -> usize {
+        let arc = Arc::from_raw(ptr.get_ptr() as *const Entry);
+        let count = Arc::count(&arc);
+        std::mem::forget(arc);
+        count
     }
 
     pub unsafe fn restore_arc(v: TaggedValue) -> Arc<Entry> {
@@ -83,9 +104,13 @@ impl AtomStore {
         for entry in other.data.keys() {
             let cur_entry = self.insert_entry(Cow::Borrowed(&entry.string), entry.hash);
 
-            let ptr = unsafe { NonNull::new_unchecked(Arc::as_ptr(&cur_entry) as *mut Entry) };
+            let ptr =
+                unsafe { NonNull::new_unchecked(Arc::into_raw(cur_entry.clone()) as *mut Entry) };
 
-            entry.alias.store(TaggedValue::new_ptr(ptr), SeqCst);
+            let old = entry.alias.swap(TaggedValue::new_ptr(ptr), SeqCst);
+            if let Some(old) = old {
+                unsafe { Entry::restore_arc(old) };
+            }
         }
     }
 

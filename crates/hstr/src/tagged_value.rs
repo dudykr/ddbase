@@ -172,10 +172,15 @@ impl AtomicTaggedValue {
         unsafe { std::mem::transmute(self.value.load(ordering)) }
     }
 
-    pub fn store(&self, value: TaggedValue, ordering: std::sync::atomic::Ordering) {
+    #[must_use]
+    pub fn swap(
+        &self,
+        value: TaggedValue,
+        ordering: std::sync::atomic::Ordering,
+    ) -> Option<TaggedValue> {
         let value = Some(value);
         // The niche guarantees that Option<TaggedValue> has the same layout as the
         // atomic
-        unsafe { self.value.store(std::mem::transmute(value), ordering) }
+        unsafe { std::mem::transmute(self.value.swap(std::mem::transmute(value), ordering)) }
     }
 }

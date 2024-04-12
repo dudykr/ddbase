@@ -5,7 +5,7 @@ edition     = "2021"
 license     = "Apache-2.0"
 name        = "hstr"
 repository  = "https://github.com/dudykr/ddbase.git"
-version     = "0.2.9"
+version     = "0.2.10"
 
 [lib]
 bench = false
