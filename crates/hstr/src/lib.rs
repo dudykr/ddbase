@@ -261,6 +261,15 @@ impl Atom {
         }
     }
 
+    #[cfg(test)]
+    fn ref_count(&self) -> usize {
+        if self.tag() == DYNAMIC_TAG {
+            unsafe { Entry::ref_count(self.unsafe_data) }
+        } else {
+            0
+        }
+    }
+
     #[inline(always)]
     fn simple_eq(&self, other: &Self) -> Option<bool> {
         if self.unsafe_data == other.unsafe_data {
