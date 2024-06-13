@@ -18,6 +18,7 @@ use crate::dynamic::Entry;
 
 mod dynamic;
 mod global_store;
+mod repr;
 mod tagged_value;
 #[cfg(test)]
 mod tests;
