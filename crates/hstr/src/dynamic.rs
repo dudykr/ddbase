@@ -4,17 +4,14 @@ use std::{
     hash::{BuildHasherDefault, Hash, Hasher},
     num::NonZeroU32,
     ptr::NonNull,
-    sync::atomic::{
-        AtomicU32,
-        Ordering::{self, SeqCst},
-    },
+    sync::atomic::{AtomicU32, Ordering::SeqCst},
 };
 
 use rustc_hash::FxHasher;
 use triomphe::Arc;
 
 use crate::{
-    tagged_value::{AtomicTaggedValue, TaggedValue, MAX_INLINE_LEN},
+    tagged_value::{TaggedValue, MAX_INLINE_LEN},
     Atom, INLINE_TAG_INIT, LEN_OFFSET, TAG_MASK,
 };
 
@@ -23,17 +20,6 @@ pub(crate) struct Entry {
     pub string: Box<str>,
     pub hash: u64,
     pub store_id: Option<NonZeroU32>,
-    pub alias: AtomicTaggedValue,
-}
-
-impl Drop for Entry {
-    fn drop(&mut self) {
-        if let Some(old) = self.alias.load(Ordering::SeqCst) {
-            unsafe {
-                Self::restore_arc(old);
-            }
-        }
-    }
 }
 
 impl Entry {
@@ -43,14 +29,6 @@ impl Entry {
 
     pub unsafe fn deref_from<'i>(ptr: TaggedValue) -> &'i Entry {
         &*Self::cast(ptr)
-    }
-
-    #[cfg(test)]
-    pub unsafe fn ref_count(ptr: TaggedValue) -> usize {
-        let arc = Arc::from_raw(ptr.get_ptr() as *const Entry);
-        let count = Arc::count(&arc);
-        std::mem::forget(arc);
-        count
     }
 
     pub unsafe fn restore_arc(v: TaggedValue) -> Arc<Entry> {
@@ -99,21 +77,6 @@ impl Default for AtomStore {
 }
 
 impl AtomStore {
-    ///
-    pub fn merge(&mut self, other: AtomStore) {
-        for entry in other.data.keys() {
-            let cur_entry = self.insert_entry(Cow::Borrowed(&entry.string), entry.hash);
-
-            let ptr =
-                unsafe { NonNull::new_unchecked(Arc::into_raw(cur_entry.clone()) as *mut Entry) };
-
-            let old = entry.alias.swap(TaggedValue::new_ptr(ptr), SeqCst);
-            if let Some(old) = old {
-                unsafe { Entry::restore_arc(old) };
-            }
-        }
-    }
-
     #[inline(always)]
     pub fn atom<'a>(&mut self, text: impl Into<Cow<'a, str>>) -> Atom {
         new_atom(self, text.into())
@@ -170,7 +133,6 @@ impl Storage for &'_ mut AtomStore {
                         string: text.into_owned().into_boxed_str(),
                         hash,
                         store_id,
-                        alias: AtomicTaggedValue::default(),
                     }),
                     (),
                 )

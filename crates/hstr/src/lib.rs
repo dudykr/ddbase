@@ -7,7 +7,6 @@ use std::{
     mem::{self, forget},
     num::NonZeroU8,
     ops::Deref,
-    sync::atomic::Ordering::SeqCst,
 };
 
 use debug_unreachable::debug_unreachable;
@@ -260,15 +259,6 @@ impl Atom {
         }
     }
 
-    #[cfg(test)]
-    fn ref_count(&self) -> usize {
-        if self.tag() == DYNAMIC_TAG {
-            unsafe { Entry::ref_count(self.unsafe_data) }
-        } else {
-            0
-        }
-    }
-
     #[inline(always)]
     fn simple_eq(&self, other: &Self) -> Option<bool> {
         if self.unsafe_data == other.unsafe_data {
@@ -283,31 +273,6 @@ impl Atom {
 
         if self.get_hash() != other.get_hash() {
             return Some(false);
-        }
-
-        self.simple_eq_slow(other)
-    }
-
-    #[inline(never)]
-    fn simple_eq_slow(&self, other: &Self) -> Option<bool> {
-        if self.is_dynamic() {
-            // This is slow, but we don't reach here in most cases
-            let te = unsafe { Entry::deref_from(self.unsafe_data) };
-
-            if let Some(self_alias) = te.alias.load(SeqCst) {
-                if let Some(result) = other.simple_eq(&Atom::from_alias(self_alias)) {
-                    return Some(result);
-                }
-            }
-        }
-
-        if other.is_dynamic() {
-            let oe = unsafe { Entry::deref_from(other.unsafe_data) };
-            if let Some(other_alias) = oe.alias.load(SeqCst) {
-                if let Some(result) = self.simple_eq(&Atom::from_alias(other_alias)) {
-                    return Some(result);
-                }
-            }
         }
 
         None
