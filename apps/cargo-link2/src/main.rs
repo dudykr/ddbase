@@ -12,8 +12,16 @@ cargo_subcommand_metadata::description!(
     "Link crates from a cargo workspace to the current project"
 );
 
+#[derive(Parser)]
+#[command(bin_name = "cargo", version, author, disable_help_subcommand = true)]
+enum Subcommand {
+    /// Show the result of macro expansion.
+    #[command(name = "link", version, author, disable_version_flag = true)]
+    Link(Link),
+}
+
 #[derive(Debug, Parser)]
-struct CliArgs {
+struct Link {
     /// Changes the link location to <dir>.
     ///
     /// Defaults to the current directory.
@@ -28,7 +36,7 @@ struct CliArgs {
 }
 
 fn main() -> Result<()> {
-    let args = CliArgs::parse();
+    let Subcommand::Link(args) = Subcommand::parse();
 
     let working_dir = match args.dir {
         Some(v) => v,
