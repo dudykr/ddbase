@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use cargo_metadata::{DependencyKind, Metadata, MetadataCommand};
+use cargo_metadata::{Metadata, MetadataCommand};
 use clap::Parser;
 
 #[derive(Debug, Parser)]
@@ -72,7 +72,7 @@ fn list_of_crates(target_dir: &Path) -> Result<Vec<PatchPkg>> {
         .collect())
 }
 
-fn add_patch_section(working_dir: &Path, link_candidates: &[PatchPkg]) -> Result<Vec<PatchPkg>> {
+fn add_patch_section(working_dir: &Path, link_candidates: &[PatchPkg]) -> Result<Vec<String>> {
     let md = MetadataCommand::new()
         .current_dir(working_dir)
         .exec()
@@ -138,7 +138,7 @@ fn find_root_manifest_path(md: &Metadata) -> Result<PathBuf> {
 fn find_used_crates(
     md: &Metadata,
     link_candidates: &[PatchPkg],
-) -> Result<(Vec<PatchPkg>, Vec<PatchPkg>)> {
+) -> Result<(Vec<PatchPkg>, Vec<String>)> {
     let mut direct_deps = HashSet::new();
     let mut all_deps = HashSet::new();
 
@@ -155,12 +155,8 @@ fn find_used_crates(
                 if let Some(linked) = link_candidates.iter().find(|c| c.name == dep.name) {
                     direct_deps.insert(linked.clone());
                 }
-            }
-
-            if let Some(linked) = link_candidates.iter().find(|c| c.name == dep.name) {
-                if matches!(dep.kind, DependencyKind::Normal | DependencyKind::Build) {
-                    all_deps.insert(linked.clone());
-                }
+            } else {
+                all_deps.insert(pkg.name.clone());
             }
         }
     }
@@ -174,13 +170,13 @@ fn find_used_crates(
     Ok((direct_deps, all_deps))
 }
 
-fn run_cargo_update(dir: &PathBuf, crates: &[PatchPkg]) -> Result<()> {
+fn run_cargo_update(dir: &PathBuf, crates: &[String]) -> Result<()> {
     let mut cmd = std::process::Command::new(cargo_bin());
     cmd.current_dir(dir);
     cmd.arg("update");
     for pkg in crates {
         cmd.arg("--package");
-        cmd.arg(&pkg.name);
+        cmd.arg(pkg);
     }
 
     eprintln!("Running: {:?}", cmd);
