@@ -49,22 +49,9 @@ jobs:
     name: Check license of dependencies
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-
-      - name: Install cargo-deny
-        uses: baptiste0928/cargo-install@v2
-        with:
-          crate: cargo-deny
-          version: "0.11.3"
-
-      - name: Check licenses
-        run: |
-          cargo deny check
+      - uses: EmbarkStudios/cargo-deny-action@v1
 
   cargo-check:
     name: Check
@@ -137,3 +124,35 @@ jobs:
     steps:
       - run: exit 1
         if: ${{ always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'skipped') || contains(needs.*.result, 'cancelled')) }}
+
+  cargo-publish:
+    name: "Publish"
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - done
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          override: true
+
+      - name: Install cargo-edit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-edit@0.12.2
+
+      - name: Install cargo-mono
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mono@0.4.1
+
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          cargo mono publish --no-verify
