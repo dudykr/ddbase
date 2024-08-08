@@ -6,7 +6,6 @@ members = [
     "crates/hstr",
     "crates/default-from-serde",
     "crates/st-map",
-    "xtask",
 ]
 resolver = "2"
 
