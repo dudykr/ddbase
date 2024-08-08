@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/cargo-link2",
     "crates/dudy-malloc",
     "crates/is-macro",
     "crates/hstr",
@@ -8,3 +9,9 @@ members = [
     "xtask",
 ]
 resolver = "2"
+
+
+[workspace.package]
+edition    = "2021"
+license    = "Apache-2.0"
+repository = "https://github.com/dudykr/ddbase.git"
