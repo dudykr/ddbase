@@ -1,5 +1,8 @@
+use clap::Parser;
+
+#[derive(Debug, Parser)]
 struct CliArgs {}
 
 fn main() {
-    println!("Hello, world!");
+    let args = CliArgs::parse();
 }
