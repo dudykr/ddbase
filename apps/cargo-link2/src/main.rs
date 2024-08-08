@@ -8,6 +8,10 @@ use anyhow::{Context, Result};
 use cargo_metadata::{Metadata, MetadataCommand};
 use clap::Parser;
 
+cargo_subcommand_metadata::description!(
+    "Link crates from a cargo workspace to the current project"
+);
+
 #[derive(Debug, Parser)]
 struct CliArgs {
     /// Changes the link location to <dir>.
