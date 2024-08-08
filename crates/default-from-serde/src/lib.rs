@@ -37,16 +37,11 @@ use core::fmt;
 use std::error;
 use std::fmt::Display;
 #[cfg(feature = "std")]
-#[cfg(feature = "std")]
-use std::{borrow::ToOwned, string::String};
+use std::string::String;
 
 pub use derive_default_from_serde::SerdeDefault;
-use serde::{
-    de::{
-        self, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, Unexpected,
-        VariantAccess, Visitor,
-    },
-    forward_to_deserialize_any,
+use serde::de::{
+    DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess, Visitor,
 };
 
 use crate::number::Number;
@@ -413,135 +408,5 @@ impl<'de> MapAccess<'de> for MapDeserializer {
 
     fn size_hint(&self) -> Option<usize> {
         Some(0)
-    }
-}
-
-struct KeyClassifier;
-
-enum KeyClass {
-    Map(String),
-    #[cfg(feature = "arbitrary_precision")]
-    Number,
-}
-
-impl<'de> DeserializeSeed<'de> for KeyClassifier {
-    type Value = KeyClass;
-
-    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserializer.deserialize_str(self)
-    }
-}
-
-impl<'de> Visitor<'de> for KeyClassifier {
-    type Value = KeyClass;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a string key")
-    }
-
-    fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        Ok(KeyClass::Map(s.to_owned()))
-    }
-
-    #[cfg(any(feature = "std", feature = "alloc"))]
-    fn visit_string<E>(self, s: String) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        Ok(KeyClass::Map(s))
-    }
-}
-
-struct BorrowedCowStrDeserializer;
-
-impl<'de> de::Deserializer<'de> for BorrowedCowStrDeserializer {
-    type Error = Error;
-
-    forward_to_deserialize_any! {
-        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
-        bytes byte_buf option unit unit_struct newtype_struct seq tuple
-        tuple_struct map struct identifier ignored_any
-    }
-
-    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_borrowed_str("")
-    }
-
-    fn deserialize_enum<V>(
-        self,
-        _name: &str,
-        _variants: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_enum(self)
-    }
-}
-
-impl<'de> de::EnumAccess<'de> for BorrowedCowStrDeserializer {
-    type Error = Error;
-    type Variant = UnitOnly;
-
-    fn variant_seed<T>(self, seed: T) -> Result<(T::Value, Self::Variant), Error>
-    where
-        T: de::DeserializeSeed<'de>,
-    {
-        let value = tri!(seed.deserialize(self));
-        Ok((value, UnitOnly))
-    }
-}
-
-struct UnitOnly;
-
-impl<'de> de::VariantAccess<'de> for UnitOnly {
-    type Error = Error;
-
-    fn unit_variant(self) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn newtype_variant_seed<T>(self, _seed: T) -> Result<T::Value, Error>
-    where
-        T: de::DeserializeSeed<'de>,
-    {
-        Err(de::Error::invalid_type(
-            Unexpected::UnitVariant,
-            &"newtype variant",
-        ))
-    }
-
-    fn tuple_variant<V>(self, _len: usize, _visitor: V) -> Result<V::Value, Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        Err(de::Error::invalid_type(
-            Unexpected::UnitVariant,
-            &"tuple variant",
-        ))
-    }
-
-    fn struct_variant<V>(
-        self,
-        _fields: &'static [&'static str],
-        _visitor: V,
-    ) -> Result<V::Value, Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        Err(de::Error::invalid_type(
-            Unexpected::UnitVariant,
-            &"struct variant",
-        ))
     }
 }
