@@ -10,5 +10,5 @@ version     = "0.2.3"
 [lib]
 
 [dependencies]
-arrayvec         = "0.7.2"
+arrayvec         = { workspace = true }
 static-map-macro = { path = "../static-map-macro", version = "0.3.2" }
