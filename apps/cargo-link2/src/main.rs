@@ -1,7 +1,6 @@
 use std::{
     env::current_dir,
     path::{Path, PathBuf},
-    ptr::metadata,
 };
 
 use anyhow::{Context, Result};
@@ -43,7 +42,12 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn list_of_crates(target_dir: &Path) -> Result<Vec<String>> {
+struct PatchPkg {
+    name: String,
+    path: PathBuf,
+}
+
+fn list_of_crates(target_dir: &Path) -> Result<Vec<PatchPkg>> {
     let md = MetadataCommand::new()
         .no_deps()
         .current_dir(target_dir)
@@ -60,7 +64,7 @@ fn list_of_crates(target_dir: &Path) -> Result<Vec<String>> {
         .collect())
 }
 
-fn add_patch_section(working_dir: &Path, link_candidates: &[String]) -> Result<Vec<String>> {
+fn add_patch_section(working_dir: &Path, link_candidates: &[PatchPkg]) -> Result<Vec<String>> {
     let md = MetadataCommand::new()
         .current_dir(working_dir)
         .exec()
@@ -77,6 +81,36 @@ fn add_patch_section(working_dir: &Path, link_candidates: &[String]) -> Result<V
             working_dir.display()
         )
     })?;
+
+    let mut toml = std::fs::read_to_string(&root_manifest_path)
+        .with_context(|| format!("failed to read '{}'", root_manifest_path.display()))?;
+
+    let mut doc = toml.parse::<toml_edit::DocumentMut>().with_context(|| {
+        format!(
+            "failed to parse Cargo.toml at '{}'",
+            root_manifest_path.display()
+        )
+    })?;
+
+    let crates_to_link = find_used_crates(&md, link_candidates)
+        .with_context(|| format!("failed to find used crates in '{}'", working_dir.display()))?;
+
+    if doc.get("patch").is_none() {
+        doc["patch"] = toml_edit::table();
+    }
+
+    let patch = doc["patch"].as_table_mut().unwrap();
+    if patch.get("crates-io").is_none() {
+        patch["crates-io"] = toml_edit::table();
+    }
+
+    let crates_io = patch["crates-io"].as_table_mut().unwrap();
+
+    for name in &crates_to_link {
+        crates_io[&**name] = toml_edit::value(format!("{{ path = \"../{}\" }}", name));
+    }
+
+    Ok(crates_to_link)
 }
 
 fn find_root_manifest_path(md: &Metadata) -> Result<PathBuf> {
@@ -86,6 +120,8 @@ fn find_root_manifest_path(md: &Metadata) -> Result<PathBuf> {
         Ok(PathBuf::from(md.workspace_root.clone()).join("Cargo.toml"))
     }
 }
+
+fn find_used_crates(md: &Metadata, link_candidates: &[PatchPkg]) -> Result<Vec<String>> {}
 
 fn run_cargo_update(dir: &PathBuf, crate_names: &[String]) -> Result<()> {
     let mut cmd = std::process::Command::new(cargo_bin());
