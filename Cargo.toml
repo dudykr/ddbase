@@ -17,7 +17,10 @@ repository = "https://github.com/dudykr/ddbase.git"
 
 [workspace.dependencies]
 Inflector             = { version = "0.11.4", default-features = false }
+anyhow                = "1.0.86"
 arrayvec              = "0.7.2"
+cargo_metadata        = "0.18.1"
+clap                  = "4.5.13"
 compact_str           = "0.7.1"
 criterion             = "0.5.1"
 hashbrown             = { version = "0.14.3", default-features = false }
@@ -38,4 +41,5 @@ smartstring           = "1.0.1"
 smol_str              = "0.2.0"
 string_cache          = "0.8.7"
 syn                   = "2.0.39"
+toml_edit             = "0.22.20"
 triomphe              = "0.1.11"
