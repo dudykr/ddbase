@@ -3,9 +3,9 @@ authors       = ["강동윤 <kdy1997.dev@gmail.com>"]
 description   = "Derive methods for using custom enums like Option / Result"
 documentation = "https://docs.rs/is-macro"
 edition       = "2018"
-license       = "Apache-2.0"
+license       = { workspace = true }
 name          = "is-macro"
-repository    = "https://github.com/dudykr/ddbase"
+repository    = { workspace = true }
 version       = "0.3.5"
 
 [lib]
