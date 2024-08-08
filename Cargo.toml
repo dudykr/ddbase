@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "crates/cargo-link2",
+    "apps/cargo-link2",
     "crates/dudy-malloc",
     "crates/is-macro",
     "crates/hstr",
