@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use cargo_metadata::{Metadata, MetadataCommand};
 use clap::Parser;
 
 #[derive(Debug, Parser)]
@@ -43,8 +44,9 @@ fn main() -> Result<()> {
 }
 
 fn list_of_crates(target_dir: &Path) -> Result<Vec<String>> {
-    let md = cargo_metadata::MetadataCommand::new()
+    let md = MetadataCommand::new()
         .no_deps()
+        .current_dir(target_dir)
         .exec()
         .with_context(|| format!("failed to run cargo metadata in '{}'", target_dir.display()))?;
 
@@ -58,7 +60,32 @@ fn list_of_crates(target_dir: &Path) -> Result<Vec<String>> {
         .collect())
 }
 
-fn add_patch_section(working_dir: &Path, link_candidates: &[String]) -> Result<Vec<String>> {}
+fn add_patch_section(working_dir: &Path, link_candidates: &[String]) -> Result<Vec<String>> {
+    let md = MetadataCommand::new()
+        .current_dir(working_dir)
+        .exec()
+        .with_context(|| {
+            format!(
+                "failed to run cargo metadata in '{}'",
+                working_dir.display()
+            )
+        })?;
+
+    let root_manifest_path = find_root_manifest_path(&md).with_context(|| {
+        format!(
+            "failed to find the root manifest for '{}'",
+            working_dir.display()
+        )
+    })?;
+}
+
+fn find_root_manifest_path(md: &Metadata) -> Result<PathBuf> {
+    if let Some(root) = md.root_package() {
+        Ok(root.manifest_path.clone().into())
+    } else {
+        Ok(PathBuf::from(md.workspace_root.clone()).join("Cargo.toml"))
+    }
+}
 
 fn run_cargo_update(dir: &PathBuf, crate_names: &[String]) -> Result<()> {
     let mut cmd = std::process::Command::new(cargo_bin());
