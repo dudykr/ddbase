@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use cargo_metadata::{Metadata, MetadataCommand};
+use cargo_metadata::{DependencyKind, Metadata, MetadataCommand};
 use clap::Parser;
 
 #[derive(Debug, Parser)]
@@ -100,7 +100,7 @@ fn add_patch_section(working_dir: &Path, link_candidates: &[PatchPkg]) -> Result
         )
     })?;
 
-    let crates_to_link = find_used_crates(&md, link_candidates)
+    let (crates_to_link, all_deps) = find_used_crates(&md, link_candidates)
         .with_context(|| format!("failed to find used crates in '{}'", working_dir.display()))?;
 
     if doc.get("patch").is_none() {
@@ -123,7 +123,7 @@ fn add_patch_section(working_dir: &Path, link_candidates: &[PatchPkg]) -> Result
     std::fs::write(&root_manifest_path, doc.to_string())
         .with_context(|| format!("failed to write to '{}'", root_manifest_path.display()))?;
 
-    Ok(crates_to_link)
+    Ok(all_deps)
 }
 
 fn find_root_manifest_path(md: &Metadata) -> Result<PathBuf> {
@@ -134,8 +134,13 @@ fn find_root_manifest_path(md: &Metadata) -> Result<PathBuf> {
     }
 }
 
-fn find_used_crates(md: &Metadata, link_candidates: &[PatchPkg]) -> Result<Vec<PatchPkg>> {
-    let mut used_crates = HashSet::new();
+/// `(direct, all)``
+fn find_used_crates(
+    md: &Metadata,
+    link_candidates: &[PatchPkg],
+) -> Result<(Vec<PatchPkg>, Vec<PatchPkg>)> {
+    let mut direct_deps = HashSet::new();
+    let mut all_deps = HashSet::new();
 
     let workspace_packages = md
         .packages
@@ -145,21 +150,28 @@ fn find_used_crates(md: &Metadata, link_candidates: &[PatchPkg]) -> Result<Vec<P
         .collect::<HashSet<_>>();
 
     for pkg in &md.packages {
-        if !workspace_packages.contains(&pkg.name) {
-            continue;
-        }
-
         for dep in &pkg.dependencies {
+            if workspace_packages.contains(&pkg.name) {
+                if let Some(linked) = link_candidates.iter().find(|c| c.name == dep.name) {
+                    direct_deps.insert(linked.clone());
+                }
+            }
+
             if let Some(linked) = link_candidates.iter().find(|c| c.name == dep.name) {
-                used_crates.insert(linked.clone());
+                if matches!(dep.kind, DependencyKind::Normal | DependencyKind::Build) {
+                    all_deps.insert(linked.clone());
+                }
             }
         }
     }
 
-    let mut used_crates = used_crates.into_iter().collect::<Vec<_>>();
-    used_crates.sort();
+    let mut direct_deps = direct_deps.into_iter().collect::<Vec<_>>();
+    direct_deps.sort();
 
-    Ok(used_crates)
+    let mut all_deps = all_deps.into_iter().collect::<Vec<_>>();
+    all_deps.sort();
+
+    Ok((direct_deps, all_deps))
 }
 
 fn run_cargo_update(dir: &PathBuf, crates: &[PatchPkg]) -> Result<()> {
