@@ -5,7 +5,7 @@ edition     = "2018"
 license     = { workspace = true }
 name        = "st-map"
 repository  = { workspace = true }
-version     = "0.2.3"
+version     = "0.2.4"
 
 [lib]
 

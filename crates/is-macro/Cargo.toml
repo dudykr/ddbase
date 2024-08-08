@@ -6,7 +6,7 @@ edition       = "2018"
 license       = { workspace = true }
 name          = "is-macro"
 repository    = { workspace = true }
-version       = "0.3.5"
+version       = "0.3.6"
 
 [lib]
 proc-macro = true
