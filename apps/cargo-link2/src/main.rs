@@ -157,6 +157,7 @@ fn run_cargo_update(dir: &PathBuf, crates: &[PatchPkg]) -> Result<()> {
         cmd.arg(&pkg.name);
     }
 
+    eprintln!("Running: {:?}", cmd);
     let status = cmd.status().context("failed to run cargo update")?;
 
     if !status.success() {
