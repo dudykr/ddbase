@@ -167,6 +167,7 @@ name = "cargo-link2"
 version = "0.1.1"
 dependencies = [
  "anyhow",
+ "cargo-subcommand-metadata",
  "cargo_metadata",
  "clap",
  "toml_edit",
@@ -180,6 +181,12 @@ checksum = "694c8807f2ae16faecc43dc17d74b3eb042482789fd0eb64b39a2e04e087053f"
 dependencies = [
  "serde",
 ]
+
+[[package]]
+name = "cargo-subcommand-metadata"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a33d3b80a8db16c4ad7676653766a8e59b5f95443c8823cb7cff587b90cb91ba"
 
 [[package]]
 name = "cargo_metadata"
