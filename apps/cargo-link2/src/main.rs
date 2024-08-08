@@ -120,6 +120,9 @@ fn add_patch_section(working_dir: &Path, link_candidates: &[PatchPkg]) -> Result
         crates_io[&**name] = v;
     }
 
+    std::fs::write(&root_manifest_path, doc.to_string())
+        .with_context(|| format!("failed to write to '{}'", root_manifest_path.display()))?;
+
     Ok(crates_to_link)
 }
 
