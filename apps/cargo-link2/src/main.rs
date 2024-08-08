@@ -134,7 +134,18 @@ fn find_root_manifest_path(md: &Metadata) -> Result<PathBuf> {
 fn find_used_crates(md: &Metadata, link_candidates: &[PatchPkg]) -> Result<Vec<PatchPkg>> {
     let mut used_crates = HashSet::new();
 
+    let workspace_packages = md
+        .packages
+        .iter()
+        .filter(|p| md.workspace_members.contains(&p.id))
+        .map(|p| p.name.clone())
+        .collect::<HashSet<_>>();
+
     for pkg in &md.packages {
+        if !workspace_packages.contains(&pkg.name) {
+            continue;
+        }
+
         for dep in &pkg.dependencies {
             if let Some(linked) = link_candidates.iter().find(|c| c.name == dep.name) {
                 used_crates.insert(linked.clone());
