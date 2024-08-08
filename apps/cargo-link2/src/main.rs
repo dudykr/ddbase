@@ -42,6 +42,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Clone)]
 struct PatchPkg {
     name: String,
     path: PathBuf,
@@ -60,11 +61,17 @@ fn list_of_crates(target_dir: &Path) -> Result<Vec<PatchPkg>> {
         .packages
         .into_iter()
         .filter(|p| ws_members.contains(&p.id))
-        .map(|p| p.name)
+        .map(|p| PatchPkg {
+            name: p.name,
+            path: PathBuf::from(p.manifest_path)
+                .parent()
+                .unwrap()
+                .to_path_buf(),
+        })
         .collect())
 }
 
-fn add_patch_section(working_dir: &Path, link_candidates: &[PatchPkg]) -> Result<Vec<String>> {
+fn add_patch_section(working_dir: &Path, link_candidates: &[PatchPkg]) -> Result<Vec<PatchPkg>> {
     let md = MetadataCommand::new()
         .current_dir(working_dir)
         .exec()
@@ -82,7 +89,7 @@ fn add_patch_section(working_dir: &Path, link_candidates: &[PatchPkg]) -> Result
         )
     })?;
 
-    let mut toml = std::fs::read_to_string(&root_manifest_path)
+    let toml = std::fs::read_to_string(&root_manifest_path)
         .with_context(|| format!("failed to read '{}'", root_manifest_path.display()))?;
 
     let mut doc = toml.parse::<toml_edit::DocumentMut>().with_context(|| {
@@ -106,8 +113,10 @@ fn add_patch_section(working_dir: &Path, link_candidates: &[PatchPkg]) -> Result
 
     let crates_io = patch["crates-io"].as_table_mut().unwrap();
 
-    for name in &crates_to_link {
-        crates_io[&**name] = toml_edit::value(format!("{{ path = \"../{}\" }}", name));
+    for PatchPkg { name, path } in &crates_to_link {
+        let mut v = toml_edit::table();
+        v["path"] = toml_edit::value(path.display().to_string());
+        crates_io[&**name] = v;
     }
 
     Ok(crates_to_link)
@@ -121,15 +130,15 @@ fn find_root_manifest_path(md: &Metadata) -> Result<PathBuf> {
     }
 }
 
-fn find_used_crates(md: &Metadata, link_candidates: &[PatchPkg]) -> Result<Vec<String>> {}
+fn find_used_crates(md: &Metadata, link_candidates: &[PatchPkg]) -> Result<Vec<PatchPkg>> {}
 
-fn run_cargo_update(dir: &PathBuf, crate_names: &[String]) -> Result<()> {
+fn run_cargo_update(dir: &PathBuf, crates: &[PatchPkg]) -> Result<()> {
     let mut cmd = std::process::Command::new(cargo_bin());
     cmd.current_dir(dir);
     cmd.arg("update");
-    for name in crate_names {
+    for pkg in crates {
         cmd.arg("--package");
-        cmd.arg(name);
+        cmd.arg(&pkg.name);
     }
 
     let status = cmd.status().context("failed to run cargo update")?;
