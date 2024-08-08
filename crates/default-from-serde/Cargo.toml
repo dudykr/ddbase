@@ -13,7 +13,7 @@ std     = ["serde/std"]
 
 [dependencies]
 derive-default-from-serde = { path = "../derive-default-from-serde", version = "0.1.1" }
-serde                     = { version = "1", default-features = false }
+serde                     = { workspace = true }
 
 [dev-dependencies]
-serde_derive = "1.0.193"
+serde_derive = { workspace = true }
