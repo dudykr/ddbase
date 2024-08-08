@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     env::current_dir,
     path::{Path, PathBuf},
 };
@@ -42,7 +43,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct PatchPkg {
     name: String,
     path: PathBuf,
@@ -130,7 +131,22 @@ fn find_root_manifest_path(md: &Metadata) -> Result<PathBuf> {
     }
 }
 
-fn find_used_crates(md: &Metadata, link_candidates: &[PatchPkg]) -> Result<Vec<PatchPkg>> {}
+fn find_used_crates(md: &Metadata, link_candidates: &[PatchPkg]) -> Result<Vec<PatchPkg>> {
+    let mut used_crates = HashSet::new();
+
+    for pkg in &md.packages {
+        for dep in &pkg.dependencies {
+            if let Some(linked) = link_candidates.iter().find(|c| c.name == dep.name) {
+                used_crates.insert(linked.clone());
+            }
+        }
+    }
+
+    let mut used_crates = used_crates.into_iter().collect::<Vec<_>>();
+    used_crates.sort();
+
+    Ok(used_crates)
+}
 
 fn run_cargo_update(dir: &PathBuf, crates: &[PatchPkg]) -> Result<()> {
     let mut cmd = std::process::Command::new(cargo_bin());
