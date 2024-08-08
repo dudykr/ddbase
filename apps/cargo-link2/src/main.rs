@@ -155,8 +155,8 @@ fn find_used_crates(
                 if let Some(linked) = link_candidates.iter().find(|c| c.name == dep.name) {
                     direct_deps.insert(linked.clone());
                 }
-            } else {
-                all_deps.insert(pkg.name.clone());
+            } else if let Some(dep) = link_candidates.iter().find(|c| c.name == dep.name) {
+                all_deps.insert(dep.name.clone());
             }
         }
     }
