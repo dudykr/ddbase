@@ -15,7 +15,7 @@ cargo_subcommand_metadata::description!(
 #[derive(Parser)]
 #[command(bin_name = "cargo", version, author, disable_help_subcommand = true)]
 enum Subcommand {
-    /// Show the result of macro expansion.
+    /// Link crates from a cargo workspace to the current project
     #[command(name = "link", version, author, disable_version_flag = true)]
     Link(Link),
 }
