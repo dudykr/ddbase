@@ -1,3 +1,5 @@
+#![allow(clippy::missing_transmute_annotations)]
+
 use std::{num::NonZeroU8, os::raw::c_void, ptr::NonNull, slice};
 
 #[cfg(feature = "atom_size_128")]
