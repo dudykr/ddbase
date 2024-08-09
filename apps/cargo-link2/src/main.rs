@@ -84,7 +84,7 @@ fn list_of_crates(target_dir: &Path) -> Result<Vec<PatchPkg>> {
         .collect())
 }
 
-fn add_patch_section(working_dir: &Path, link_candidates: &[PatchPkg]) -> Result<Vec<String>> {
+fn add_patch_section(working_dir: &Path, link_candidates: &[PatchPkg]) -> Result<Vec<PatchPkg>> {
     let md = MetadataCommand::new()
         .current_dir(working_dir)
         .exec()
@@ -112,7 +112,7 @@ fn add_patch_section(working_dir: &Path, link_candidates: &[PatchPkg]) -> Result
         )
     })?;
 
-    let (crates_to_link, all_deps) = find_used_crates(&md, link_candidates)
+    let (_, all_deps) = find_used_crates(&md, link_candidates)
         .with_context(|| format!("failed to find used crates in '{}'", working_dir.display()))?;
 
     if doc.get("patch").is_none() {
@@ -126,7 +126,7 @@ fn add_patch_section(working_dir: &Path, link_candidates: &[PatchPkg]) -> Result
 
     let crates_io = patch["crates-io"].as_table_mut().unwrap();
 
-    for PatchPkg { name, path } in &crates_to_link {
+    for PatchPkg { name, path } in &all_deps {
         let mut v = toml_edit::table();
         v["path"] = toml_edit::value(path.display().to_string());
         crates_io[&**name] = v;
@@ -150,7 +150,7 @@ fn find_root_manifest_path(md: &Metadata) -> Result<PathBuf> {
 fn find_used_crates(
     md: &Metadata,
     link_candidates: &[PatchPkg],
-) -> Result<(Vec<PatchPkg>, Vec<String>)> {
+) -> Result<(Vec<PatchPkg>, Vec<PatchPkg>)> {
     let mut direct_deps = HashSet::new();
     let mut all_deps = HashSet::new();
 
@@ -176,19 +176,22 @@ fn find_used_crates(
     let mut direct_deps = direct_deps.into_iter().collect::<Vec<_>>();
     direct_deps.sort();
 
-    let mut all_deps = all_deps.into_iter().collect::<Vec<_>>();
-    all_deps.sort();
+    let all_pkgs = link_candidates
+        .iter()
+        .filter(|c| all_deps.contains(&c.name))
+        .cloned()
+        .collect::<Vec<_>>();
 
-    Ok((direct_deps, all_deps))
+    Ok((direct_deps, all_pkgs))
 }
 
-fn run_cargo_update(dir: &PathBuf, crates: &[String]) -> Result<()> {
+fn run_cargo_update(dir: &PathBuf, crates: &[PatchPkg]) -> Result<()> {
     let mut cmd = std::process::Command::new(cargo_bin());
     cmd.current_dir(dir);
     cmd.arg("update");
     for pkg in crates {
         cmd.arg("--package");
-        cmd.arg(pkg);
+        cmd.arg(&pkg.name);
     }
 
     eprintln!("Running: {:?}", cmd);
