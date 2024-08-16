@@ -162,13 +162,25 @@ fn find_used_crates(
         .collect::<HashSet<_>>();
 
     for pkg in &md.packages {
+        if workspace_packages.contains(&pkg.name) {
+            for dep in &pkg.dependencies {
+                if let Some(linked) = link_candidates.iter().find(|c| c.name == dep.name) {
+                    direct_deps.insert(linked.clone());
+                }
+            }
+        }
+    }
+
+    for pkg in &md.packages {
+        if link_candidates.iter().any(|c| c.name == pkg.name) {
+            all_deps.insert(pkg.name.clone());
+        }
+
         for dep in &pkg.dependencies {
             if workspace_packages.contains(&pkg.name) {
                 if let Some(linked) = link_candidates.iter().find(|c| c.name == dep.name) {
                     direct_deps.insert(linked.clone());
                 }
-            } else if link_candidates.iter().any(|c| c.name == dep.name) {
-                all_deps.insert(pkg.name.clone());
             }
         }
     }
