@@ -164,7 +164,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-link2"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "cargo-subcommand-metadata",
