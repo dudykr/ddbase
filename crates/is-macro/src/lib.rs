@@ -1,6 +1,6 @@
 extern crate proc_macro;
 
-use inflector::Inflector;
+use heck::ToSnakeCase;
 use proc_macro2::Span;
 use quote::{quote, ToTokens};
 use syn::{
