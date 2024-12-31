@@ -100,10 +100,15 @@ pub type CachedAtom = Lazy<Atom>;
 #[macro_export]
 macro_rules! atom {
     ($s:tt) => {{
-        thread_local! {
-            static CACHE: $crate::Atom = $crate::Atom::from($s);
+        #[inline(never)]
+        fn get_atom() -> $crate::Atom {
+            thread_local! {
+                static CACHE: $crate::Atom = $crate::Atom::from($s);
+            }
+            CACHE.with(|cache| $crate::Atom::clone(cache))
         }
-        CACHE.with(|cache| $crate::Atom::clone(cache))
+
+        get_atom()
     }};
 }
 
