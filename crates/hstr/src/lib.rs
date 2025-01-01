@@ -307,6 +307,8 @@ impl PartialEq for Atom {
                 }
                 _ => {}
             }
+
+            return te.string == oe.string;
         }
 
         // If the store is different, the string may be the same, even though the
