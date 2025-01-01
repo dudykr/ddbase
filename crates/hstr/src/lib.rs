@@ -263,32 +263,19 @@ impl Atom {
             _ => unsafe { debug_unreachable!() },
         }
     }
-
-    #[inline(always)]
-    fn simple_eq(&self, other: &Self) -> Option<bool> {
-        if self.unsafe_data == other.unsafe_data {
-            return Some(true);
-        }
-
-        // If one is inline and the other is not, the length is different.
-        // If one is static and the other is not, it's different.
-        if self.tag() != other.tag() {
-            return Some(false);
-        }
-
-        if self.get_hash() != other.get_hash() {
-            return Some(false);
-        }
-
-        None
-    }
 }
 
 impl PartialEq for Atom {
     #[inline(never)]
     fn eq(&self, other: &Self) -> bool {
-        if let Some(result) = self.simple_eq(other) {
-            return result;
+        if self.unsafe_data == other.unsafe_data {
+            return true;
+        }
+
+        // If one is inline and the other is not, the length is different.
+        // If one is static and the other is not, it's different.
+        if self.tag() != other.tag() {
+            return false;
         }
 
         if self.is_dynamic() && other.is_dynamic() {
@@ -309,6 +296,10 @@ impl PartialEq for Atom {
             }
 
             return te.string == oe.string;
+        }
+
+        if self.get_hash() != other.get_hash() {
+            return false;
         }
 
         // If the store is different, the string may be the same, even though the
