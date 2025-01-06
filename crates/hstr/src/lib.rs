@@ -282,6 +282,10 @@ impl PartialEq for Atom {
             let te = unsafe { Entry::deref_from(self.unsafe_data) };
             let oe = unsafe { Entry::deref_from(other.unsafe_data) };
 
+            if te.hash != oe.hash {
+                return false;
+            }
+
             // If the store is the same, the same string has same `unsafe_data``
             match (&te.store_id, &oe.store_id) {
                 (Some(this_store), Some(other_store)) => {
