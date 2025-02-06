@@ -86,8 +86,9 @@ fn expand_fields(fields: &syn::Fields) -> (proc_macro2::TokenStream, proc_macro2
                     shrink_to_fit::ShrinkToFit::shrink_to_fit(#field_name);
                 ));
 
+                let index = syn::Index::from(i);
                 field_bindings.extend(quote!(
-                    #i: ref mut #field_name,
+                    #index: ref mut #field_name,
                 ));
             }
         }
