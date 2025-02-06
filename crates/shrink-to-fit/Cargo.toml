@@ -1,10 +1,10 @@
 [package]
-description          = "Recursively calls `shrink_to_fit` on all elements of the container."
-edition.workspace    = true
-license.workspace    = true
-name                 = "shrink-to-fit"
-repository.workspace = true
-version              = "0.2.0"
+description = "Recursively calls `shrink_to_fit` on all elements of the container."
+edition     = { workspace = true }
+license     = { workspace = true }
+name        = "shrink-to-fit"
+repository  = { workspace = true }
+version     = "0.2.0"
 
 [package.metadata.docs.rs]
 all-features = true
