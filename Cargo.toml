@@ -1,11 +1,5 @@
 [workspace]
-members = [
-    "apps/cargo-link2",
-    "crates/dudy-malloc",
-    "crates/is-macro",
-    "crates/default-from-serde",
-    "crates/st-map",
-]
+members  = ["apps/cargo-link2", "crates/*"]
 resolver = "2"
 
 
