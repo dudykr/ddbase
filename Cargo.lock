@@ -319,10 +319,11 @@ version = "0.1.0"
 dependencies = [
  "hashbrown",
  "indexmap",
+ "shrink-to-fit-macro",
 ]
 
 [[package]]
-name = "shrink-to-fit-macros"
+name = "shrink-to-fit-macro"
 version = "0.1.0"
 
 [[package]]
