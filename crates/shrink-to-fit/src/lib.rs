@@ -123,3 +123,24 @@ where
         self.shrink_to_fit();
     }
 }
+
+#[cfg(feature = "hashbrown")]
+impl<K, V, S> ShrinkToFit for hashbrown::HashMap<K, V, S>
+where
+    K: Eq + Hash,
+    S: BuildHasher,
+{
+    fn shrink_to_fit(&mut self) {
+        self.shrink_to_fit();
+    }
+}
+
+#[cfg(feature = "hashbrown")]
+impl<K, V> ShrinkToFit for hashbrown::HashSet<K, V>
+where
+    K: Eq + Hash,
+{
+    fn shrink_to_fit(&mut self) {
+        self.shrink_to_fit();
+    }
+}
