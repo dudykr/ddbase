@@ -17,11 +17,16 @@
 //! assert_eq!(vec.capacity(), 3);
 //! ```
 #![deny(warnings)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     hash::{BuildHasher, Hash},
 };
+
+#[cfg(feature = "derive")]
+#[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
+pub use shrink_to_fit_macro::ShrinkToFit;
 
 /// Recursively calls `shrink_to_fit` on all elements of the container.
 pub trait ShrinkToFit {
