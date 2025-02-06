@@ -3,6 +3,7 @@ pub trait ShrinkToFit {
 }
 
 impl<T: ShrinkToFit> ShrinkToFit for Vec<T> {
+    #[inline]
     fn shrink_to_fit(&mut self) {
         for value in self.iter_mut() {
             value.shrink_to_fit();
@@ -12,6 +13,7 @@ impl<T: ShrinkToFit> ShrinkToFit for Vec<T> {
 }
 
 impl ShrinkToFit for String {
+    #[inline]
     fn shrink_to_fit(&mut self) {
         self.shrink_to_fit();
     }
@@ -21,6 +23,7 @@ macro_rules! impl_noop {
     ($($t:ty),*) => {
         $(
             impl ShrinkToFit for $t {
+                #[inline(always)]
                 fn shrink_to_fit(&mut self) {}
             }
         )*
