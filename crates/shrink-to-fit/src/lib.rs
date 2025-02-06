@@ -1,3 +1,23 @@
+//! Shrink-to-fit trait for collections.
+//!
+//! This crate provides a `ShrinkToFit` trait that can be used to shrink-to-fit
+//! collections.
+//!
+//! # Examples
+//!
+//! ```
+//! use shrink_to_fit::ShrinkToFit;
+//!
+//! let mut vec = Vec::with_capacity(100);
+//! vec.push(1);
+//! vec.push(2);
+//! vec.push(3);
+//! vec.shrink_to_fit();
+//! assert_eq!(vec.len(), 3);
+//! assert_eq!(vec.capacity(), 3);
+//! ```
+#![deny(warnings)]
+
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     hash::{BuildHasher, Hash},
@@ -77,6 +97,28 @@ where
 
 impl<T: ShrinkToFit> ShrinkToFit for VecDeque<T> {
     #[inline]
+    fn shrink_to_fit(&mut self) {
+        self.shrink_to_fit();
+    }
+}
+
+#[cfg(feature = "indexmap")]
+impl<K, V, S> ShrinkToFit for IndexMap<K, V, S>
+where
+    K: Eq + Hash,
+    S: BuildHasher,
+{
+    fn shrink_to_fit(&mut self) {
+        self.shrink_to_fit();
+    }
+}
+
+#[cfg(feature = "indexmap")]
+impl<K, S> ShrinkToFit for IndexSet<K, S>
+where
+    K: Eq + Hash,
+    S: BuildHasher,
+{
     fn shrink_to_fit(&mut self) {
         self.shrink_to_fit();
     }
