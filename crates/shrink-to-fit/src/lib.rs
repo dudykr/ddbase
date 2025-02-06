@@ -108,7 +108,7 @@ impl<T: ShrinkToFit> ShrinkToFit for VecDeque<T> {
 }
 
 #[cfg(feature = "indexmap")]
-impl<K, V, S> ShrinkToFit for IndexMap<K, V, S>
+impl<K, V, S> ShrinkToFit for indexmap::IndexMap<K, V, S>
 where
     K: Eq + Hash,
     S: BuildHasher,
@@ -119,7 +119,7 @@ where
 }
 
 #[cfg(feature = "indexmap")]
-impl<K, S> ShrinkToFit for IndexSet<K, S>
+impl<K, S> ShrinkToFit for indexmap::IndexSet<K, S>
 where
     K: Eq + Hash,
     S: BuildHasher,
@@ -141,9 +141,10 @@ where
 }
 
 #[cfg(feature = "hashbrown")]
-impl<K, V> ShrinkToFit for hashbrown::HashSet<K, V>
+impl<K, S> ShrinkToFit for hashbrown::HashSet<K, S>
 where
     K: Eq + Hash,
+    S: BuildHasher,
 {
     fn shrink_to_fit(&mut self) {
         self.shrink_to_fit();
