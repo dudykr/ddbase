@@ -3,6 +3,20 @@ pub trait ShrinkToFit {
     fn shrink_to_fit(&mut self);
 }
 
+macro_rules! impl_noop {
+    ($($t:ty),*) => {
+        $(
+            impl ShrinkToFit for $t {
+                #[inline(always)]
+                fn shrink_to_fit(&mut self) {}
+            }
+        )*
+    };
+}
+
+impl_noop!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64);
+impl_noop!(bool, char);
+
 impl<T: ShrinkToFit> ShrinkToFit for Vec<T> {
     #[inline]
     fn shrink_to_fit(&mut self) {
@@ -19,17 +33,3 @@ impl ShrinkToFit for String {
         self.shrink_to_fit();
     }
 }
-
-macro_rules! impl_noop {
-    ($($t:ty),*) => {
-        $(
-            impl ShrinkToFit for $t {
-                #[inline(always)]
-                fn shrink_to_fit(&mut self) {}
-            }
-        )*
-    };
-}
-
-impl_noop!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64);
-impl_noop!(bool, char);
