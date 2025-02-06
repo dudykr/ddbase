@@ -43,13 +43,13 @@ pub fn derive_shrink_to_fit(input: proc_macro::TokenStream) -> proc_macro::Token
             )
         }
 
-        syn::Data::Union(u) => {
-            panic!("union is not supported: {:?}", u);
+        syn::Data::Union(_) => {
+            panic!("union is not supported");
         }
     };
 
     quote! {
-        impl<#impl_generics> ShrinkToFit for #name<#ty_generics> #where_clause {
+        impl<#impl_generics> shrink_to_fit::ShrinkToFit for #name<#ty_generics> #where_clause {
             fn shrink_to_fit(&mut self) {
                 #body_impl
             }
@@ -73,7 +73,7 @@ fn expand_fields(fields: &syn::Fields) -> (proc_macro2::TokenStream, proc_macro2
                 ));
 
                 body_impl.extend(quote!(
-                    #field_name.shrink_to_fit();
+                    shrink_to_fit::ShrinkToFit::shrink_to_fit(&mut #field_name);
                 ));
             }
         }
@@ -83,7 +83,7 @@ fn expand_fields(fields: &syn::Fields) -> (proc_macro2::TokenStream, proc_macro2
                 let field_name = Ident::new(&format!("_{}", i), field.span());
 
                 body_impl.extend(quote!(
-                    #field_name.shrink_to_fit();
+                    shrink_to_fit::ShrinkToFit::shrink_to_fit(&mut #field_name);
                 ));
 
                 field_bindings.extend(quote!(
