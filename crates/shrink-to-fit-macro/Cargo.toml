@@ -1,8 +1,11 @@
 [package]
 edition.workspace    = true
 license.workspace    = true
-name                 = "shrink-to-fit-macros"
+name                 = "shrink-to-fit-macro"
 repository.workspace = true
 version              = "0.1.0"
+
+[lib]
+proc-macro = true
 
 [dependencies]

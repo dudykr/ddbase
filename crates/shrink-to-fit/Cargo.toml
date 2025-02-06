@@ -6,9 +6,11 @@ repository.workspace = true
 version              = "0.1.0"
 
 [dependencies]
-hashbrown = { workspace = true, optional = true }
-indexmap  = { workspace = true, optional = true }
+hashbrown           = { workspace = true, optional = true }
+indexmap            = { workspace = true, optional = true }
+shrink-to-fit-macro = { version = "0.1.0", path = "../shrink-to-fit-macro", optional = true }
 
 [features]
+derive    = ["dep:shrink-to-fit-macro"]
 hashbrown = ["dep:hashbrown"]
 indexmap  = ["dep:indexmap"]
