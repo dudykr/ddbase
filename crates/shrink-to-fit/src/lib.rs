@@ -33,3 +33,19 @@ impl ShrinkToFit for String {
         self.shrink_to_fit();
     }
 }
+
+impl<T: ShrinkToFit> ShrinkToFit for Box<T> {
+    #[inline]
+    fn shrink_to_fit(&mut self) {
+        self.as_mut().shrink_to_fit();
+    }
+}
+
+impl<T: ShrinkToFit> ShrinkToFit for Option<T> {
+    #[inline]
+    fn shrink_to_fit(&mut self) {
+        if let Some(value) = self {
+            value.shrink_to_fit();
+        }
+    }
+}
