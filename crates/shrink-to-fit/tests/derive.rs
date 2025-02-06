@@ -1,4 +1,4 @@
-use shrink_to_fit_macro::ShrinkToFit;
+use shrink_to_fit::ShrinkToFit;
 
 #[derive(Debug, ShrinkToFit)]
 struct S {
