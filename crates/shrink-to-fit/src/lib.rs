@@ -47,6 +47,20 @@ macro_rules! impl_noop {
 impl_noop!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64);
 impl_noop!(bool, char);
 
+impl<T: ?Sized + ShrinkToFit> ShrinkToFit for &mut T {
+    #[inline]
+    fn shrink_to_fit(&mut self) {
+        (**self).shrink_to_fit();
+    }
+}
+
+impl<T: ?Sized + ShrinkToFit> ShrinkToFit for Box<T> {
+    #[inline]
+    fn shrink_to_fit(&mut self) {
+        self.as_mut().shrink_to_fit();
+    }
+}
+
 impl<T: ShrinkToFit> ShrinkToFit for Vec<T> {
     #[inline]
     fn shrink_to_fit(&mut self) {
@@ -61,13 +75,6 @@ impl ShrinkToFit for String {
     #[inline]
     fn shrink_to_fit(&mut self) {
         self.shrink_to_fit();
-    }
-}
-
-impl<T: ShrinkToFit> ShrinkToFit for Box<T> {
-    #[inline]
-    fn shrink_to_fit(&mut self) {
-        self.as_mut().shrink_to_fit();
     }
 }
 
