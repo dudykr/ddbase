@@ -1,3 +1,8 @@
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    hash::{BuildHasher, Hash},
+};
+
 /// Recursively calls `shrink_to_fit` on all elements of the container.
 pub trait ShrinkToFit {
     fn shrink_to_fit(&mut self);
@@ -47,5 +52,32 @@ impl<T: ShrinkToFit> ShrinkToFit for Option<T> {
         if let Some(value) = self {
             value.shrink_to_fit();
         }
+    }
+}
+
+impl<K, V, S> ShrinkToFit for HashMap<K, V, S>
+where
+    K: Eq + Hash,
+    S: BuildHasher,
+{
+    fn shrink_to_fit(&mut self) {
+        self.shrink_to_fit();
+    }
+}
+
+impl<K, S> ShrinkToFit for HashSet<K, S>
+where
+    K: Eq + Hash,
+    S: BuildHasher,
+{
+    fn shrink_to_fit(&mut self) {
+        self.shrink_to_fit();
+    }
+}
+
+impl<T: ShrinkToFit> ShrinkToFit for VecDeque<T> {
+    #[inline]
+    fn shrink_to_fit(&mut self) {
+        self.shrink_to_fit();
     }
 }
