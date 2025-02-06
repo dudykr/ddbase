@@ -1,3 +1,4 @@
+/// Recursively calls `shrink_to_fit` on all elements of the container.
 pub trait ShrinkToFit {
     fn shrink_to_fit(&mut self);
 }
