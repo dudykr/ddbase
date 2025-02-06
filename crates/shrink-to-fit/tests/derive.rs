@@ -13,8 +13,8 @@ fn test_shrink_to_fit() {
         b: String::with_capacity(100),
     };
 
-    s.a.push_str("a");
-    s.b.push_str("b");
+    s.a.push('a');
+    s.b.push('b');
 
     s.shrink_to_fit();
 
