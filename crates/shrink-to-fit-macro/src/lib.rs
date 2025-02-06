@@ -1,4 +1,5 @@
 use quote::quote;
+use syn::{spanned::Spanned, Ident};
 
 #[proc_macro_derive(ShrinkToFit)]
 pub fn derive_shrink_to_fit(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -59,6 +60,40 @@ pub fn derive_shrink_to_fit(input: proc_macro::TokenStream) -> proc_macro::Token
 
 /// Returns `(field_bindings, body_code)`
 fn expand_fields(fields: &syn::Fields) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
+    let mut field_bindings = proc_macro2::TokenStream::new();
     let mut body_impl = proc_macro2::TokenStream::new();
-    let mut body_drop = proc_macro2::TokenStream::new();
+
+    match fields {
+        syn::Fields::Named(fields) => {
+            for field in fields.named.iter() {
+                let field_name = field.ident.as_ref().unwrap();
+
+                field_bindings.extend(quote!(
+                    #field_name,
+                ));
+
+                body_impl.extend(quote!(
+                    #field_name.shrink_to_fit();
+                ));
+            }
+        }
+
+        syn::Fields::Unnamed(fields) => {
+            for (i, field) in fields.unnamed.iter().enumerate() {
+                let field_name = Ident::new(&format!("_{}", i), field.span());
+
+                body_impl.extend(quote!(
+                    #field_name.shrink_to_fit();
+                ));
+
+                field_bindings.extend(quote!(
+                    #i: #field_name,
+                ));
+            }
+        }
+
+        syn::Fields::Unit => {}
+    }
+
+    (field_bindings, body_impl)
 }
