@@ -1,9 +1,10 @@
 use quote::quote;
-use syn::{spanned::Spanned, Ident};
+use syn::{spanned::Spanned, Attribute, Ident};
 
 #[proc_macro_derive(ShrinkToFit, attributes(shrink_to_fit))]
 pub fn derive_shrink_to_fit(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input: syn::DeriveInput = syn::parse_macro_input!(input as syn::DeriveInput);
+    let data_attr: DataAttr = DataAttr::parse(&input.attrs);
 
     let name = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
@@ -56,6 +57,24 @@ pub fn derive_shrink_to_fit(input: proc_macro::TokenStream) -> proc_macro::Token
         }
     }
     .into()
+}
+
+#[derive(Default)]
+struct DataAttr {
+    crate_name: Option<syn::Path>,
+}
+impl DataAttr {
+    fn parse(attrs: &[Attribute]) -> DataAttr {
+        let mut data_attr = DataAttr::default();
+
+        for attr in attrs {
+            if attr.path().is_ident("crate") {
+                data_attr.crate_name = Some(attr.path().clone());
+            }
+        }
+
+        data_attr
+    }
 }
 
 /// Returns `(field_bindings, body_code)`
