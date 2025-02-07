@@ -22,8 +22,10 @@
 #![cfg_attr(feature = "nightly", allow(incomplete_features))]
 
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{BinaryHeap, HashMap, HashSet, VecDeque},
+    ffi::OsString,
     hash::{BuildHasher, Hash},
+    path::PathBuf,
 };
 
 #[doc(hidden)]
@@ -79,12 +81,20 @@ impl<T> ShrinkToFit for Vec<T> {
     }
 }
 
-impl ShrinkToFit for String {
-    #[inline]
-    fn shrink_to_fit(&mut self) {
-        self.shrink_to_fit();
-    }
+macro_rules! impl_simple {
+    ($($t:ty),*) => {
+        $(
+            impl ShrinkToFit for $t {
+                #[inline(always)]
+                fn shrink_to_fit(&mut self) {
+                    self.shrink_to_fit();
+                }
+            }
+        )*
+    };
 }
+
+impl_simple!(String, OsString, PathBuf);
 
 impl<T: ShrinkToFit> ShrinkToFit for Option<T> {
     #[inline]
@@ -92,6 +102,15 @@ impl<T: ShrinkToFit> ShrinkToFit for Option<T> {
         if let Some(value) = self {
             value.shrink_to_fit();
         }
+    }
+}
+
+impl<T> ShrinkToFit for BinaryHeap<T>
+where
+    T: Ord,
+{
+    fn shrink_to_fit(&mut self) {
+        self.shrink_to_fit();
     }
 }
 
