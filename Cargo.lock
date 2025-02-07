@@ -298,7 +298,7 @@ dependencies = [
 
 [[package]]
 name = "shrink-to-fit"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "hashbrown",
  "indexmap",
@@ -308,7 +308,7 @@ dependencies = [
 
 [[package]]
 name = "shrink-to-fit-macro"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "proc-macro2",
  "quote",

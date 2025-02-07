@@ -4,7 +4,7 @@ edition     = { workspace = true }
 license     = { workspace = true }
 name        = "shrink-to-fit"
 repository  = { workspace = true }
-version     = "0.2.6"
+version     = "0.2.7"
 
 [package.metadata.docs.rs]
 all-features = true
@@ -14,7 +14,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 hashbrown           = { workspace = true, optional = true, default-features = false }
 indexmap            = { workspace = true, optional = true, default-features = false }
 serde_json          = { workspace = true, optional = true, default-features = false }
-shrink-to-fit-macro = { version = "0.2.2", path = "../shrink-to-fit-macro", optional = true }
+shrink-to-fit-macro = { version = "0.2.3", path = "../shrink-to-fit-macro", optional = true }
 
 
 [features]
