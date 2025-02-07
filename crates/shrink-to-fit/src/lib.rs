@@ -24,6 +24,8 @@ use std::{
     hash::{BuildHasher, Hash},
 };
 
+#[doc(hidden)]
+pub mod autoderef;
 mod maybe;
 
 #[cfg(feature = "derive")]
