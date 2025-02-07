@@ -25,7 +25,7 @@ use std::{
 };
 
 #[doc(hidden)]
-pub mod autoderef;
+pub mod helpers;
 mod maybe;
 
 #[cfg(feature = "derive")]
