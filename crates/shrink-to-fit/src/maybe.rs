@@ -1,14 +1,17 @@
+#[allow(unused_imports)]
+use crate::ShrinkToFit;
+
 pub(crate) trait MayShrinkToFit {
     fn may_shrink_to_fit(&mut self);
 }
 
 #[cfg(feature = "nightly")]
-impl<T> MayShrinkToFit for T {
+impl<T: ?Sized> MayShrinkToFit for T {
     default fn may_shrink_to_fit(&mut self) {}
 }
 
 #[cfg(feature = "nightly")]
-impl<T: ShrinkToFit> MayShrinkToFit for T {
+impl<T: ?Sized + ShrinkToFit> MayShrinkToFit for T {
     fn may_shrink_to_fit(&mut self) {
         self.shrink_to_fit();
     }
@@ -21,6 +24,6 @@ impl<T> MayShrinkToFit for T {
     fn may_shrink_to_fit(&mut self) {}
 }
 
-pub(crate) fn may_shrink_to_fit<T: MayShrinkToFit>(value: &mut T) {
+pub(crate) fn may_shrink_to_fit<T: ?Sized + MayShrinkToFit>(value: &mut T) {
     value.may_shrink_to_fit();
 }

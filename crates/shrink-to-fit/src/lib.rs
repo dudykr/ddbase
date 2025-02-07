@@ -18,6 +18,8 @@
 //! ```
 #![deny(warnings)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(feature = "nightly", feature(specialization))]
+#![cfg_attr(feature = "nightly", allow(incomplete_features))]
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
