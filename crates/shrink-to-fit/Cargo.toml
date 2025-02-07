@@ -13,12 +13,15 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 hashbrown           = { workspace = true, optional = true, default-features = false }
 indexmap            = { workspace = true, optional = true, default-features = false }
+serde_json          = { workspace = true, optional = true, default-features = false }
 shrink-to-fit-macro = { version = "0.2.2", path = "../shrink-to-fit-macro", optional = true }
 
+
 [features]
-default   = ["derive"]
-derive    = ["dep:shrink-to-fit-macro"]
-hashbrown = ["dep:hashbrown"]
-indexmap  = ["dep:indexmap"]
+default    = ["derive"]
+derive     = ["dep:shrink-to-fit-macro"]
+hashbrown  = ["dep:hashbrown"]
+indexmap   = ["dep:indexmap"]
+serde_json = ["dep:serde_json"]
 # Specialization for nightly. `ShrinkToFit` will be called for `T` in `Vec<T>` and collection elements if T implements `ShrinkToFit`.
 nightly = []
