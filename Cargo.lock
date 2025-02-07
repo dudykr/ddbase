@@ -298,10 +298,11 @@ dependencies = [
 
 [[package]]
 name = "shrink-to-fit"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "hashbrown",
  "indexmap",
+ "serde_json",
  "shrink-to-fit-macro",
 ]
 
