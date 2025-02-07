@@ -4,7 +4,7 @@ edition     = { workspace = true }
 license     = { workspace = true }
 name        = "shrink-to-fit"
 repository  = { workspace = true }
-version     = "0.2.1"
+version     = "0.2.3"
 
 [package.metadata.docs.rs]
 all-features = true
@@ -20,3 +20,5 @@ default   = ["derive"]
 derive    = ["dep:shrink-to-fit-macro"]
 hashbrown = ["dep:hashbrown"]
 indexmap  = ["dep:indexmap"]
+# Specialization for nightly. `ShrinkToFit` will be called for `T` in `Vec<T>` and collection elements if T implements `ShrinkToFit`.
+nightly = []

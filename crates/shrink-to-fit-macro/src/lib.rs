@@ -73,7 +73,7 @@ fn expand_fields(fields: &syn::Fields) -> (proc_macro2::TokenStream, proc_macro2
                 ));
 
                 body_impl.extend(quote!(
-                    shrink_to_fit::ShrinkToFit::shrink_to_fit(#field_name);
+                    shrink_to_fit::helpers::ShrinkToFitDerefSpecialization::new(#field_name).shrink_to_fit();
                 ));
             }
         }
@@ -83,7 +83,7 @@ fn expand_fields(fields: &syn::Fields) -> (proc_macro2::TokenStream, proc_macro2
                 let field_name = Ident::new(&format!("_{}", i), field.span());
 
                 body_impl.extend(quote!(
-                    shrink_to_fit::ShrinkToFit::shrink_to_fit(#field_name);
+                    shrink_to_fit::helpers::ShrinkToFitDerefSpecialization::new(#field_name).shrink_to_fit()
                 ));
 
                 let index = syn::Index::from(i);

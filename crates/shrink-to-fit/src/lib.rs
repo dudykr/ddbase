@@ -18,11 +18,17 @@
 //! ```
 #![deny(warnings)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(feature = "nightly", feature(specialization))]
+#![cfg_attr(feature = "nightly", allow(incomplete_features))]
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     hash::{BuildHasher, Hash},
 };
+
+#[doc(hidden)]
+pub mod helpers;
+mod maybe;
 
 #[cfg(feature = "derive")]
 #[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
@@ -61,11 +67,13 @@ impl<T: ?Sized + ShrinkToFit> ShrinkToFit for Box<T> {
     }
 }
 
-impl<T: ShrinkToFit> ShrinkToFit for Vec<T> {
+/// If `nightly` cargo feature is enabled, `T::shrink_to_fit` will be called if
+/// `T` implements [ShrinkToFit].
+impl<T> ShrinkToFit for Vec<T> {
     #[inline]
     fn shrink_to_fit(&mut self) {
         for value in self.iter_mut() {
-            value.shrink_to_fit();
+            maybe::may_shrink_to_fit(value);
         }
         self.shrink_to_fit();
     }
@@ -93,6 +101,10 @@ where
     S: BuildHasher,
 {
     fn shrink_to_fit(&mut self) {
+        for v in self.values_mut() {
+            maybe::may_shrink_to_fit(v);
+        }
+
         self.shrink_to_fit();
     }
 }
@@ -110,6 +122,10 @@ where
 impl<T: ShrinkToFit> ShrinkToFit for VecDeque<T> {
     #[inline]
     fn shrink_to_fit(&mut self) {
+        for v in self.iter_mut() {
+            maybe::may_shrink_to_fit(v);
+        }
+
         self.shrink_to_fit();
     }
 }
@@ -121,6 +137,10 @@ where
     S: BuildHasher,
 {
     fn shrink_to_fit(&mut self) {
+        for v in self.values_mut() {
+            maybe::may_shrink_to_fit(v);
+        }
+
         self.shrink_to_fit();
     }
 }
@@ -143,6 +163,10 @@ where
     S: BuildHasher,
 {
     fn shrink_to_fit(&mut self) {
+        for v in self.values_mut() {
+            maybe::may_shrink_to_fit(v);
+        }
+
         self.shrink_to_fit();
     }
 }
