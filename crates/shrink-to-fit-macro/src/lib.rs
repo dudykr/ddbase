@@ -130,7 +130,7 @@ fn expand_fields(
                 let field_name = Ident::new(&format!("_{}", i), field.span());
 
                 body_impl.extend(quote!(
-                    #crate_name::helpers::ShrinkToFitDerefSpecialization::new(#field_name).shrink_to_fit()
+                    #crate_name::helpers::ShrinkToFitDerefSpecialization::new(#field_name).shrink_to_fit();
                 ));
 
                 let index = syn::Index::from(i);
