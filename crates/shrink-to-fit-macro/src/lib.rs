@@ -1,7 +1,7 @@
 use quote::quote;
 use syn::{spanned::Spanned, Ident};
 
-#[proc_macro_derive(ShrinkToFit)]
+#[proc_macro_derive(ShrinkToFit, attributes(shrink_to_fit))]
 pub fn derive_shrink_to_fit(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input: syn::DeriveInput = syn::parse_macro_input!(input as syn::DeriveInput);
 
