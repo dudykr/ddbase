@@ -1,6 +1,9 @@
 //! **NOT A PUBLIC API.**
 //!
 //! Autoderef specialization for [`ShrinkToFit`].
+//!
+//!
+//! Taken from next.js repository. https://github.com/vercel/next.js/blob/c9440f93fa5a35d6f489300a146e404936fbcbc9/turbopack/crates/turbo-tasks/src/macro_helpers.rs#L65
 
 use std::ops::{Deref, DerefMut};
 
