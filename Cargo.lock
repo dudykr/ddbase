@@ -302,6 +302,7 @@ version = "0.2.5"
 dependencies = [
  "hashbrown",
  "indexmap",
+ "serde_json",
  "shrink-to-fit-macro",
 ]
 
