@@ -20,3 +20,5 @@ default   = ["derive"]
 derive    = ["dep:shrink-to-fit-macro"]
 hashbrown = ["dep:hashbrown"]
 indexmap  = ["dep:indexmap"]
+# Specialization for nightly. `ShrinkToFit` will be called for `T` in `Vec<T>` and collection elements if T implements `ShrinkToFit`.
+nightly = []
