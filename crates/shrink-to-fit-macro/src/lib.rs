@@ -6,6 +6,12 @@ pub fn derive_shrink_to_fit(input: proc_macro::TokenStream) -> proc_macro::Token
     let input: syn::DeriveInput = syn::parse_macro_input!(input as syn::DeriveInput);
     let type_attr: TypeAttr = TypeAttr::parse(&input.attrs);
 
+    let crate_name = type_attr
+        .crate_name
+        .as_ref()
+        .map(|q| q.to_token_stream())
+        .unwrap_or_else(|| quote!(shrink_to_fit));
+
     let name = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
@@ -50,7 +56,7 @@ pub fn derive_shrink_to_fit(input: proc_macro::TokenStream) -> proc_macro::Token
     };
 
     quote! {
-        impl<#impl_generics> shrink_to_fit::ShrinkToFit for #name<#ty_generics> #where_clause {
+        impl<#impl_generics> #crate_name::ShrinkToFit for #name<#ty_generics> #where_clause {
             fn shrink_to_fit(&mut self) {
                 #body_impl
             }
