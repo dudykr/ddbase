@@ -26,6 +26,7 @@ use std::{
     ffi::OsString,
     hash::{BuildHasher, Hash},
     path::PathBuf,
+    time::Duration,
 };
 
 #[doc(hidden)]
@@ -51,9 +52,13 @@ macro_rules! impl_noop {
         )*
     };
 }
-
-impl_noop!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64);
+impl_noop!(());
+impl_noop!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64);
 impl_noop!(bool, char);
+impl_noop!(Duration);
+
+#[cfg(feature = "serde_json")]
+impl_noop!(serde_json::Value);
 
 impl<T: ?Sized + ShrinkToFit> ShrinkToFit for &mut T {
     #[inline]
