@@ -30,6 +30,7 @@ rustc-hash                = "1.1.0"
 serde                     = "1.0.192"
 serde_derive              = "1.0.193"
 serde_json                = { version = "1", default-features = false }
+smallvec                  = { version = "1", default-features = false }
 syn                       = "2.0.39"
 toml_edit                 = "0.22.20"
 triomphe                  = "0.1.11"
