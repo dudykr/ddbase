@@ -205,3 +205,13 @@ where
         self.shrink_to_fit();
     }
 }
+
+#[cfg(feature = "smallvec")]
+impl<T> ShrinkToFit for smallvec::SmallVec<T>
+where
+    T: smallvec::Array,
+{
+    fn shrink_to_fit(&mut self) {
+        self.shrink_to_fit();
+    }
+}
