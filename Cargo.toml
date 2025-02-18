@@ -10,8 +10,8 @@ license    = "Apache-2.0"
 repository = "https://github.com/dudykr/ddbase.git"
 
 [workspace.dependencies]
-appcore-app-spec = { path = "./crates/appcore-app-spec", version = "0.0.1" }
-appcore-cli      = { path = "./crates/appcore-cli", version = "0.0.1" }
+appcore-app-spec = { path = "./crates/appcore-app-spec", version = "0.1.0" }
+appcore-cli      = { path = "./crates/appcore-cli", version = "0.2.0" }
 
 Inflector                 = "0.11.4"
 anyhow                    = "1.0.91"
