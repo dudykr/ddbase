@@ -1,0 +1,268 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AppSpec",
+  "type": "object",
+  "required": [
+    "app",
+    "dev",
+    "domain",
+    "name",
+    "secrets"
+  ],
+  "properties": {
+    "app": {
+      "$ref": "#/definitions/AppDetails"
+    },
+    "auth": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/AppAuthConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "db": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/DatabaseConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "dev": {
+      "$ref": "#/definitions/DevConfig"
+    },
+    "domain": {
+      "description": "The fully qualified domain name of the app.",
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "redis": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/RedisConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "secrets": {
+      "$ref": "#/definitions/AppSecretsConfig"
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "AppAuthConfig": {
+      "oneOf": [
+        {
+          "description": "Configuration for the Logto authentication provider.\n\nThis configuration assumes `https://$domain/api/auth/callback` and `http://localhost:$port/api/auth/callback` is the callback url for the application.",
+          "type": "object",
+          "required": [
+            "app_name",
+            "provider"
+          ],
+          "properties": {
+            "app_name": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string",
+              "enum": [
+                "logto"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "AppDetails": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "nextjs-app"
+              ]
+            },
+            "translation": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/NextJsTranslationConfig"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "nodejs-api-server"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "AppSecretsConfig": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "org",
+            "project",
+            "provider"
+          ],
+          "properties": {
+            "org": {
+              "type": "string"
+            },
+            "project": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string",
+              "enum": [
+                "vercel"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "DatabaseConfig": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "project_name",
+            "provider"
+          ],
+          "properties": {
+            "project_name": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string",
+              "enum": [
+                "neon"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Configuration for the Coolify database provider.\n\nThis configuration assumes the environment for the database is `production` and `development`.",
+          "type": "object",
+          "required": [
+            "project_name",
+            "provider",
+            "server_name"
+          ],
+          "properties": {
+            "project_name": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string",
+              "enum": [
+                "coolify"
+              ]
+            },
+            "server_name": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "DevConfig": {
+      "description": "Configuration for the development environment.",
+      "type": "object",
+      "required": [
+        "port"
+      ],
+      "properties": {
+        "port": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "NextJsTranslationConfig": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "lib",
+            "service"
+          ],
+          "properties": {
+            "lib": {
+              "type": "string"
+            },
+            "service": {
+              "type": "string",
+              "enum": [
+                "deepl"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "RedisConfig": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "project_name",
+            "provider",
+            "server_name"
+          ],
+          "properties": {
+            "project_name": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string",
+              "enum": [
+                "coolify"
+              ]
+            },
+            "server_name": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}
