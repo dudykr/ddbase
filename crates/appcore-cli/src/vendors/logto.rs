@@ -99,7 +99,7 @@ pub async fn create_or_get_logto_application(
 
     let response = reqwest::Client::new()
         .get(format!("{endpoint}/api/applications"))
-        .bearer_auth(&api_key)
+        .bearer_auth(api_key)
         .send()
         .await?;
 
@@ -135,7 +135,7 @@ pub async fn create_or_get_logto_application(
 
         let secrets = reqwest::Client::new()
             .get(format!("{endpoint}/api/applications/{}/secrets", app.id))
-            .bearer_auth(&api_key)
+            .bearer_auth(api_key)
             .send()
             .await?;
 
@@ -149,7 +149,7 @@ pub async fn create_or_get_logto_application(
 
     let response = reqwest::Client::new()
         .post(format!("{endpoint}/api/applications"))
-        .bearer_auth(&api_key)
+        .bearer_auth(api_key)
         .json(&CreateAppRequest {
             r#type: "Traditional",
             name: app_name,
