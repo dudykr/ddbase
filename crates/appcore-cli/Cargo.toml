@@ -1,0 +1,29 @@
+[package]
+authors     = { workspace = true }
+description = "The CLI for AppCore"
+edition     = { workspace = true }
+license     = { workspace = true }
+name        = "appcore-cli"
+repository  = { workspace = true }
+version     = "0.1.0"
+
+[dependencies]
+anyhow             = { workspace = true }
+appcore-app-spec   = { workspace = true }
+base64             = { workspace = true }
+cached             = { workspace = true, features = ["async"] }
+clap               = { workspace = true, features = ["derive"] }
+dotenv             = { workspace = true }
+futures            = { workspace = true }
+ignore             = { workspace = true }
+rand               = { workspace = true }
+rayon              = { workspace = true }
+reqwest            = { workspace = true, features = ["json"] }
+rustc-hash         = { workspace = true }
+serde              = { workspace = true }
+serde_derive       = { workspace = true }
+serde_yaml         = { workspace = true }
+swc_malloc         = { workspace = true }
+tokio              = { workspace = true, features = ["rt-multi-thread", "rt", "macros"] }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
