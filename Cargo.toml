@@ -4,6 +4,7 @@ resolver = "2"
 
 
 [workspace.package]
+authors    = ["Donny <kdy1997.dev@gmail.com>"]
 edition    = "2021"
 license    = "Apache-2.0"
 repository = "https://github.com/dudykr/ddbase.git"
