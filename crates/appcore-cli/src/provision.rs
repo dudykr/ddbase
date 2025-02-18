@@ -191,7 +191,7 @@ async fn provision_app_auth(config: &AppSpec) -> Result<ProvisionOutput> {
 }
 
 async fn provision_app_db(app_config: &AppSpec) -> Result<ProvisionOutput> {
-    let mut output = ProvisionOutput::default();
+    let output = ProvisionOutput::default();
 
     match &app_config.db {
         Some(DatabaseConfig::Neon(_db_config)) => {
@@ -204,7 +204,7 @@ async fn provision_app_db(app_config: &AppSpec) -> Result<ProvisionOutput> {
             )
             .await?;
 
-            let outputs = try_join_all(Stage::all().map(|stage| {
+            let _outputs = try_join_all(Stage::all().map(|stage| {
                 let creator = creator.clone();
 
                 async move {
@@ -228,7 +228,7 @@ async fn provision_app_db(app_config: &AppSpec) -> Result<ProvisionOutput> {
 }
 
 async fn provision_app_redis(app_config: &AppSpec) -> Result<ProvisionOutput> {
-    let mut output = ProvisionOutput::default();
+    let output = ProvisionOutput::default();
 
     match &app_config.redis {
         Some(RedisConfig::Coolify(redis_config)) => {
@@ -238,7 +238,7 @@ async fn provision_app_redis(app_config: &AppSpec) -> Result<ProvisionOutput> {
             )
             .await?;
 
-            let outputs = try_join_all(Stage::all().map(|stage| {
+            let _outputs = try_join_all(Stage::all().map(|stage| {
                 let creator = creator.clone();
 
                 async move {

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 /// Explicit extern crate to change memory allocator
 extern crate swc_malloc;
 

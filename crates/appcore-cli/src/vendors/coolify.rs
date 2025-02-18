@@ -19,7 +19,7 @@ pub struct Project {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct Environment {
+pub struct Environment {
     pub id: u64,
     pub name: String,
     pub project_id: u64,
