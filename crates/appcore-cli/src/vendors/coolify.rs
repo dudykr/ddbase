@@ -5,7 +5,7 @@ use cached::proc_macro::cached;
 use serde_derive::{Deserialize, Serialize};
 
 async fn get_token() -> Result<String> {
-    Ok(std::env::var("COOLIFY_TOKEN").context("COOLIFY_TOKEN is not set")?)
+    std::env::var("COOLIFY_TOKEN").context("COOLIFY_TOKEN is not set")
 }
 
 #[derive(Debug, Clone, Deserialize)]

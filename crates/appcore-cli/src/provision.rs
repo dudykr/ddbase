@@ -44,6 +44,9 @@ pub(crate) struct EnvVar {
 
     /// If true, the environment variable will not be updated if it already
     /// exists.
+    ///
+    /// TODO: Use it
+    #[allow(unused)]
     pub no_update: bool,
 
     /// If [None], the environment variable will be provisioned for all stages.

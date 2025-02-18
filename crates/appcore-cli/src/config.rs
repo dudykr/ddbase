@@ -1,5 +1,5 @@
 use std::{
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 
@@ -8,6 +8,7 @@ use appcore_app_spec::AppSpec;
 
 #[derive(Debug, Clone)]
 pub struct AppConfigFile {
+    #[allow(dead_code)]
     pub path: Arc<PathBuf>,
     pub config: Arc<AppSpec>,
 }
