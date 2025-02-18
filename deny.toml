@@ -116,9 +116,9 @@ expression = "Apache-2.0 AND BSD-3-Clause"
 license-files = [{ path = "COPYRIGHT", hash = 972598577 }]
 
 [[licenses.clarify]]
-expression = "LicenseRef-ring"
+expression    = "LicenseRef-ring"
 license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
-name = "ring"
+name          = "ring"
 
 # Some crates don't have (easily) machine readable licensing information,
 # adding a clarification entry for it allows you to manually specify the
