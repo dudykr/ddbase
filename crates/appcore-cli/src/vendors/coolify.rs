@@ -176,26 +176,29 @@ async fn list_databases() -> Result<Vec<DatabaseInfo>> {
 }
 
 async fn prepare_db(db: DatabaseInfo) -> Result<DatabaseInfo> {
-    let resp = reqwest::Client::new()
-        .post(format!(
-            "https://app.coolify.io/api/v1/databases/{}/start",
-            db.uuid
-        ))
-        .bearer_auth(get_token().await?)
-        .send()
-        .await?;
+    {
+        // Start the database
+        let resp = reqwest::Client::new()
+            .post(format!(
+                "https://app.coolify.io/api/v1/databases/{}/start",
+                db.uuid
+            ))
+            .bearer_auth(get_token().await?)
+            .send()
+            .await?;
 
-    if resp.status() == StatusCode::BAD_REQUEST {
-        // Do not return error, just warn
-        warn!("failed to start database: {}", resp.text().await?);
-        return Ok(db);
-    }
+        if resp.status() == StatusCode::BAD_REQUEST {
+            // Do not return error, just warn
+            warn!("failed to start database: {}", resp.text().await?);
+            return Ok(db);
+        }
 
-    if !resp.status().is_success() {
-        return Err(anyhow::anyhow!(
-            "failed to start database: {}",
-            resp.text().await?
-        ));
+        if !resp.status().is_success() {
+            return Err(anyhow::anyhow!(
+                "failed to start database: {}",
+                resp.text().await?
+            ));
+        }
     }
 
     Ok(db)
