@@ -7,6 +7,8 @@ use reqwest::StatusCode;
 use serde_derive::{Deserialize, Serialize};
 use tracing::warn;
 
+use crate::provision::ProvisionOutput;
+
 async fn get_token() -> Result<String> {
     std::env::var("COOLIFY_TOKEN").context("COOLIFY_TOKEN is not set")
 }
@@ -238,6 +240,7 @@ pub struct DatabaseInfo {
 pub enum DbDetail {
     Postgres(PostgresDetail),
     Redis(RedisDetail),
+    Other(serde_json::Value),
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -314,7 +317,7 @@ async fn make_db_public(db: &DatabaseInfo) -> Result<()> {
     Ok(())
 }
 
-async fn prepare_db(db: DatabaseInfo) -> Result<DatabaseInfo> {
+async fn prepare_db(db: DatabaseInfo) -> Result<ProvisionOutput> {
     start_db(&db.uuid)
         .await
         .context("failed to start database")?;
@@ -323,7 +326,17 @@ async fn prepare_db(db: DatabaseInfo) -> Result<DatabaseInfo> {
         .await
         .context("failed to make db public")?;
 
-    Ok(db)
+    warn!(
+        "Coolify does not support fetching database secrets, so we cannot set env vars \
+         automatically.
+         
+         Visit https://app.coolify.io/project/{project_uuid}/environment/{env_uuid}/database/{db_uuid} to get the database credentials.",
+         project_uuid = db.project_uuid,
+         env_uuid = db.environment_uuid,
+         db_uuid = db.uuid
+    );
+
+    Ok(ProvisionOutput::default())
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -334,7 +347,7 @@ impl ResourceCreator {
         self: Arc<Self>,
         env_name: String,
         db_name: String,
-    ) -> Result<DatabaseInfo> {
+    ) -> Result<ProvisionOutput> {
         let databases = list_databases().await?;
         if let Some(db) = databases.iter().find(|db| db.name == db_name) {
             return prepare_db(db.clone()).await;
@@ -363,7 +376,7 @@ impl ResourceCreator {
         self: Arc<Self>,
         environemnt_name: String,
         redis_name: String,
-    ) -> Result<DatabaseInfo> {
+    ) -> Result<ProvisionOutput> {
         let databases = list_databases().await?;
 
         if let Some(db) = databases.iter().find(|db| db.name == redis_name) {

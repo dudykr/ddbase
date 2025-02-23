@@ -13,7 +13,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Default)]
-struct ProvisionOutput {
+pub struct ProvisionOutput {
     pub env_vars: Vec<EnvVar>,
 }
 
