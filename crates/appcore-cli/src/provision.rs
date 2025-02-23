@@ -212,7 +212,7 @@ async fn provision_app_db(app_config: &AppSpec) -> Result<ProvisionOutput> {
                         stage,
                         creator
                             .create_postgres_db(
-                                stage.env_name().to_string(),
+                                "production".to_string(),
                                 format!("{}-postgres-{}", app_config.name, stage.env_name()),
                             )
                             .await?,
