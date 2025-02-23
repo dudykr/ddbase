@@ -19,8 +19,15 @@ pub struct Project {
     pub uuid: String,
     pub name: String,
     pub description: String,
-    #[serde(default)]
     pub environments: Vec<Environment>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ProjectListItem {
+    pub id: u64,
+    pub uuid: String,
+    pub name: String,
+    pub description: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -28,6 +35,7 @@ pub struct Environment {
     pub id: u64,
     pub name: String,
     pub project_id: u64,
+    pub uuid: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -37,6 +45,18 @@ struct CreateProjectRequest<'a> {
 }
 
 #[cached(result = true)]
+async fn get_project_details(uuid: String) -> Result<Arc<Project>> {
+    let resp = reqwest::Client::new()
+        .get(format!("https://app.coolify.io/api/v1/projects/{}", uuid))
+        .bearer_auth(get_token().await?)
+        .send()
+        .await?;
+
+    let project: Project = resp.json().await.context("failed to parse project")?;
+
+    Ok(Arc::new(project))
+}
+
 pub async fn get_or_create_project(name: String) -> Result<Arc<Project>> {
     let projects = reqwest::Client::new()
         .get("https://app.coolify.io/api/v1/projects")
@@ -44,10 +64,13 @@ pub async fn get_or_create_project(name: String) -> Result<Arc<Project>> {
         .send()
         .await?;
 
-    let projects: Vec<Project> = projects.json().await.context("failed to parse projects")?;
+    let projects: Vec<ProjectListItem> =
+        projects.json().await.context("failed to parse projects")?;
 
     if let Some(project) = projects.iter().find(|p| p.name == name) {
-        return Ok(Arc::new(project.clone()));
+        return get_project_details(project.uuid.clone())
+            .await
+            .context("failed to get project details");
     }
 
     let resp = reqwest::Client::new()
@@ -317,7 +340,7 @@ async fn make_db_public(db: &DatabaseInfo) -> Result<()> {
     Ok(())
 }
 
-async fn prepare_db(db: DatabaseInfo) -> Result<ProvisionOutput> {
+async fn prepare_db(project: Arc<Project>, db: DatabaseInfo) -> Result<ProvisionOutput> {
     start_db(&db.uuid)
         .await
         .context("failed to start database")?;
@@ -331,8 +354,8 @@ async fn prepare_db(db: DatabaseInfo) -> Result<ProvisionOutput> {
          automatically.
          
          Visit https://app.coolify.io/project/{project_uuid}/environment/{env_uuid}/database/{db_uuid} to get the database credentials.",
-         project_uuid = db.project_uuid,
-         env_uuid = db.environment_uuid,
+         project_uuid = project.uuid,
+         env_uuid = project.environments[0].uuid,
          db_uuid = db.uuid
     );
 
@@ -350,7 +373,7 @@ impl ResourceCreator {
     ) -> Result<ProvisionOutput> {
         let databases = list_databases().await?;
         if let Some(db) = databases.iter().find(|db| db.name == db_name) {
-            return prepare_db(db.clone()).await;
+            return prepare_db(self.project.clone(), db.clone()).await;
         }
 
         let resp = reqwest::Client::new()
@@ -369,7 +392,7 @@ impl ResourceCreator {
         let postgres_info: DatabaseInfo =
             resp.json().await.context("failed to parse postgres info")?;
 
-        prepare_db(postgres_info.clone()).await
+        prepare_db(self.project.clone(), postgres_info.clone()).await
     }
 
     pub async fn create_redis(
@@ -380,7 +403,7 @@ impl ResourceCreator {
         let databases = list_databases().await?;
 
         if let Some(db) = databases.iter().find(|db| db.name == redis_name) {
-            return prepare_db(db.clone()).await;
+            return prepare_db(self.project.clone(), db.clone()).await;
         }
 
         let resp = reqwest::Client::new()
@@ -398,6 +421,6 @@ impl ResourceCreator {
 
         let redis_info: DatabaseInfo = resp.json().await.context("failed to parse redis info")?;
 
-        prepare_db(redis_info.clone()).await
+        prepare_db(self.project.clone(), redis_info.clone()).await
     }
 }
