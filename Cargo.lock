@@ -128,6 +128,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_derive",
+ "serde_json",
  "serde_yaml",
  "swc_malloc",
  "tokio",
