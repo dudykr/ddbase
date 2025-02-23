@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use cached::proc_macro::cached;
+use rand::Rng;
 use reqwest::StatusCode;
 use serde_derive::{Deserialize, Serialize};
 use tracing::warn;
@@ -128,6 +129,88 @@ struct CreateRedisRequest<'a> {
     name: &'a str,
 }
 
+#[derive(Debug, Default, Serialize)]
+struct UpdateDbRequest<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    is_public: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    public_port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limits_memory: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limits_memory_swap: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limits_memory_swappiness: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limits_memory_reservation: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limits_cpus: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limits_cpuset: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limits_cpu_shares: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    postgres_user: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    postgres_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    postgres_db: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    postgres_initdb_args: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    postgres_host_auth_method: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    postgres_conf: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    clickhouse_admin_user: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    clickhouse_admin_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dragonfly_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    redis_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    redis_conf: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    keydb_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    keydb_conf: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mariadb_conf: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mariadb_root_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mariadb_user: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mariadb_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mariadb_database: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mongo_conf: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mongo_initdb_root_username: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mongo_initdb_root_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mongo_initdb_database: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mysql_root_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mysql_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mysql_user: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mysql_database: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mysql_conf: Option<&'a str>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct DatabaseInfo {
     pub uuid: String,
@@ -202,10 +285,38 @@ async fn start_db(uuid: &str) -> Result<()> {
     Ok(())
 }
 
+async fn make_db_public(db: &DatabaseInfo) -> Result<()> {
+    let resp = reqwest::Client::new()
+        .patch(format!(
+            "https://app.coolify.io/api/v1/databases/{}",
+            db.uuid
+        ))
+        .bearer_auth(get_token().await?)
+        .json(&UpdateDbRequest {
+            public_port: Some(rand::rng().random_range(10000..65535)),
+            ..Default::default()
+        })
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        return Err(anyhow::anyhow!(
+            "failed to make db public: {}",
+            resp.text().await?
+        ));
+    }
+
+    Ok(())
+}
+
 async fn prepare_db(db: DatabaseInfo) -> Result<DatabaseInfo> {
     start_db(&db.uuid)
         .await
         .context("failed to start database")?;
+
+    make_db_public(&db)
+        .await
+        .context("failed to make db public")?;
 
     Ok(db)
 }
