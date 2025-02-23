@@ -22,6 +22,7 @@ reqwest            = { workspace = true, features = ["json"] }
 rustc-hash         = { workspace = true }
 serde              = { workspace = true }
 serde_derive       = { workspace = true }
+serde_json.workspace = true
 serde_yaml         = { workspace = true }
 swc_malloc         = { workspace = true }
 tokio              = { workspace = true, features = ["rt-multi-thread", "rt", "macros"] }
