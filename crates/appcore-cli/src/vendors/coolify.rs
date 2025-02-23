@@ -374,7 +374,7 @@ impl ResourceCreator {
 
     pub async fn create_redis(
         self: Arc<Self>,
-        environemnt_name: String,
+        env_name: String,
         redis_name: String,
     ) -> Result<ProvisionOutput> {
         let databases = list_databases().await?;
@@ -389,7 +389,7 @@ impl ResourceCreator {
             .json(&CreateRedisRequest {
                 server_uuid: &self.server.uuid,
                 project_uuid: &self.project.uuid,
-                environment_name: &environemnt_name,
+                environment_name: &env_name,
                 name: &redis_name,
             })
             .send()
