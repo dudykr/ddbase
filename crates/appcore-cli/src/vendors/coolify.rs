@@ -175,11 +175,11 @@ async fn list_databases() -> Result<Vec<DatabaseInfo>> {
     Ok(databases)
 }
 
-async fn start_database(uuid: String) -> Result<()> {
+async fn prepare_db(db: DatabaseInfo) -> Result<DatabaseInfo> {
     let resp = reqwest::Client::new()
         .post(format!(
             "https://app.coolify.io/api/v1/databases/{}/start",
-            uuid
+            db.uuid
         ))
         .bearer_auth(get_token().await?)
         .send()
@@ -188,7 +188,7 @@ async fn start_database(uuid: String) -> Result<()> {
     if resp.status() == StatusCode::BAD_REQUEST {
         // Do not return error, just warn
         warn!("failed to start database: {}", resp.text().await?);
-        return Ok(());
+        return Ok(db);
     }
 
     if !resp.status().is_success() {
@@ -197,7 +197,8 @@ async fn start_database(uuid: String) -> Result<()> {
             resp.text().await?
         ));
     }
-    Ok(())
+
+    Ok(db)
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -211,8 +212,7 @@ impl ResourceCreator {
     ) -> Result<DatabaseInfo> {
         let databases = list_databases().await?;
         if let Some(db) = databases.iter().find(|db| db.name == db_name) {
-            start_database(db.uuid.clone()).await?;
-            return Ok(db.clone());
+            return prepare_db(db.clone()).await;
         }
 
         let resp = reqwest::Client::new()
@@ -231,9 +231,7 @@ impl ResourceCreator {
         let postgres_info: DatabaseInfo =
             resp.json().await.context("failed to parse postgres info")?;
 
-        start_database(postgres_info.uuid.clone()).await?;
-
-        Ok(postgres_info)
+        prepare_db(postgres_info.clone()).await
     }
 
     pub async fn create_redis(
@@ -244,8 +242,7 @@ impl ResourceCreator {
         let databases = list_databases().await?;
 
         if let Some(db) = databases.iter().find(|db| db.name == redis_name) {
-            start_database(db.uuid.clone()).await?;
-            return Ok(db.clone());
+            return prepare_db(db.clone()).await;
         }
 
         let resp = reqwest::Client::new()
@@ -263,8 +260,6 @@ impl ResourceCreator {
 
         let redis_info: DatabaseInfo = resp.json().await.context("failed to parse redis info")?;
 
-        start_database(redis_info.uuid.clone()).await?;
-
-        Ok(redis_info)
+        prepare_db(redis_info.clone()).await
     }
 }
