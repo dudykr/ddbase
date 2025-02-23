@@ -294,7 +294,11 @@ async fn make_db_public(db: &DatabaseInfo) -> Result<()> {
         .bearer_auth(get_token().await?)
         .json(&UpdateDbRequest {
             is_public: Some(true),
-            public_port: Some(rand::rng().random_range(10000..65535)),
+            public_port: if db.public_port.is_none() {
+                Some(rand::rng().random_range(10000..65535))
+            } else {
+                None
+            },
             ..Default::default()
         })
         .send()
