@@ -2,7 +2,12 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use cached::proc_macro::cached;
+use rand::Rng;
+use reqwest::StatusCode;
 use serde_derive::{Deserialize, Serialize};
+use tracing::warn;
+
+use crate::provision::ProvisionOutput;
 
 async fn get_token() -> Result<String> {
     std::env::var("COOLIFY_TOKEN").context("COOLIFY_TOKEN is not set")
@@ -14,8 +19,15 @@ pub struct Project {
     pub uuid: String,
     pub name: String,
     pub description: String,
-    #[serde(default)]
     pub environments: Vec<Environment>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ProjectListItem {
+    pub id: u64,
+    pub uuid: String,
+    pub name: String,
+    pub description: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -23,6 +35,7 @@ pub struct Environment {
     pub id: u64,
     pub name: String,
     pub project_id: u64,
+    pub uuid: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -32,6 +45,18 @@ struct CreateProjectRequest<'a> {
 }
 
 #[cached(result = true)]
+async fn get_project_details(uuid: String) -> Result<Arc<Project>> {
+    let resp = reqwest::Client::new()
+        .get(format!("https://app.coolify.io/api/v1/projects/{}", uuid))
+        .bearer_auth(get_token().await?)
+        .send()
+        .await?;
+
+    let project: Project = resp.json().await.context("failed to parse project")?;
+
+    Ok(Arc::new(project))
+}
+
 pub async fn get_or_create_project(name: String) -> Result<Arc<Project>> {
     let projects = reqwest::Client::new()
         .get("https://app.coolify.io/api/v1/projects")
@@ -39,10 +64,13 @@ pub async fn get_or_create_project(name: String) -> Result<Arc<Project>> {
         .send()
         .await?;
 
-    let projects: Vec<Project> = projects.json().await.context("failed to parse projects")?;
+    let projects: Vec<ProjectListItem> =
+        projects.json().await.context("failed to parse projects")?;
 
     if let Some(project) = projects.iter().find(|p| p.name == name) {
-        return Ok(Arc::new(project.clone()));
+        return get_project_details(project.uuid.clone())
+            .await
+            .context("failed to get project details");
     }
 
     let resp = reqwest::Client::new()
@@ -111,7 +139,7 @@ pub struct ResourceCreator {
 }
 
 #[derive(Debug, Serialize)]
-struct CreateProstgresRequest<'a> {
+struct CreatePostgresRequest<'a> {
     server_uuid: &'a str,
     project_uuid: &'a str,
     environment_name: &'a str,
@@ -124,6 +152,88 @@ struct CreateRedisRequest<'a> {
     project_uuid: &'a str,
     environment_name: &'a str,
     name: &'a str,
+}
+
+#[derive(Debug, Default, Serialize)]
+struct UpdateDbRequest<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    is_public: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    public_port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limits_memory: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limits_memory_swap: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limits_memory_swappiness: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limits_memory_reservation: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limits_cpus: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limits_cpuset: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limits_cpu_shares: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    postgres_user: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    postgres_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    postgres_db: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    postgres_initdb_args: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    postgres_host_auth_method: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    postgres_conf: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    clickhouse_admin_user: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    clickhouse_admin_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dragonfly_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    redis_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    redis_conf: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    keydb_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    keydb_conf: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mariadb_conf: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mariadb_root_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mariadb_user: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mariadb_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mariadb_database: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mongo_conf: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mongo_initdb_root_username: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mongo_initdb_root_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mongo_initdb_database: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mysql_root_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mysql_password: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mysql_user: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mysql_database: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mysql_conf: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -153,6 +263,7 @@ pub struct DatabaseInfo {
 pub enum DbDetail {
     Postgres(PostgresDetail),
     Redis(RedisDetail),
+    Other(serde_json::Value),
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -173,27 +284,105 @@ async fn list_databases() -> Result<Vec<DatabaseInfo>> {
     Ok(databases)
 }
 
+async fn start_db(uuid: &str) -> Result<()> {
+    // Start the database
+    let resp = reqwest::Client::new()
+        .post(format!(
+            "https://app.coolify.io/api/v1/databases/{}/start",
+            uuid
+        ))
+        .bearer_auth(get_token().await?)
+        .send()
+        .await?;
+
+    if resp.status() == StatusCode::BAD_REQUEST {
+        // Do not return error, just warn
+        warn!("failed to start database: {}", resp.text().await?);
+        return Ok(());
+    }
+
+    if !resp.status().is_success() {
+        return Err(anyhow::anyhow!(
+            "failed to start database: {}",
+            resp.text().await?
+        ));
+    }
+
+    Ok(())
+}
+
+async fn make_db_public(db: &DatabaseInfo) -> Result<()> {
+    let resp = reqwest::Client::new()
+        .patch(format!(
+            "https://app.coolify.io/api/v1/databases/{}",
+            db.uuid
+        ))
+        .bearer_auth(get_token().await?)
+        .json(&UpdateDbRequest {
+            is_public: Some(true),
+            public_port: if db.public_port.is_none() {
+                Some(rand::rng().random_range(10000..65535))
+            } else {
+                None
+            },
+            ..Default::default()
+        })
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        return Err(anyhow::anyhow!(
+            "failed to make db public: {}",
+            resp.text().await?
+        ));
+    }
+
+    Ok(())
+}
+
+async fn prepare_db(project: Arc<Project>, db: DatabaseInfo) -> Result<ProvisionOutput> {
+    start_db(&db.uuid)
+        .await
+        .context("failed to start database")?;
+
+    make_db_public(&db)
+        .await
+        .context("failed to make db public")?;
+
+    warn!(
+        "Coolify does not support fetching database secrets, so we cannot set env vars \
+         automatically.
+         
+         Visit https://app.coolify.io/project/{project_uuid}/environment/{env_uuid}/database/{db_uuid} to get the database credentials.",
+         project_uuid = project.uuid,
+         env_uuid = project.environments[0].uuid,
+         db_uuid = db.uuid
+    );
+
+    Ok(ProvisionOutput::default())
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct RedisDetail {}
 
 impl ResourceCreator {
     pub async fn create_postgres_db(
         self: Arc<Self>,
-        environemnt_name: String,
+        env_name: String,
         db_name: String,
-    ) -> Result<DatabaseInfo> {
+    ) -> Result<ProvisionOutput> {
         let databases = list_databases().await?;
         if let Some(db) = databases.iter().find(|db| db.name == db_name) {
-            return Ok(db.clone());
+            return prepare_db(self.project.clone(), db.clone()).await;
         }
 
         let resp = reqwest::Client::new()
             .post("https://app.coolify.io/api/v1/databases/postgresql")
             .bearer_auth(get_token().await?)
-            .json(&CreateProstgresRequest {
+            .json(&CreatePostgresRequest {
                 server_uuid: &self.server.uuid,
                 project_uuid: &self.project.uuid,
-                environment_name: &environemnt_name,
+                environment_name: &env_name,
                 name: &db_name,
             })
             .send()
@@ -203,18 +392,18 @@ impl ResourceCreator {
         let postgres_info: DatabaseInfo =
             resp.json().await.context("failed to parse postgres info")?;
 
-        Ok(postgres_info)
+        prepare_db(self.project.clone(), postgres_info.clone()).await
     }
 
     pub async fn create_redis(
         self: Arc<Self>,
-        environemnt_name: String,
+        env_name: String,
         redis_name: String,
-    ) -> Result<DatabaseInfo> {
+    ) -> Result<ProvisionOutput> {
         let databases = list_databases().await?;
 
         if let Some(db) = databases.iter().find(|db| db.name == redis_name) {
-            return Ok(db.clone());
+            return prepare_db(self.project.clone(), db.clone()).await;
         }
 
         let resp = reqwest::Client::new()
@@ -223,7 +412,7 @@ impl ResourceCreator {
             .json(&CreateRedisRequest {
                 server_uuid: &self.server.uuid,
                 project_uuid: &self.project.uuid,
-                environment_name: &environemnt_name,
+                environment_name: &env_name,
                 name: &redis_name,
             })
             .send()
@@ -232,6 +421,6 @@ impl ResourceCreator {
 
         let redis_info: DatabaseInfo = resp.json().await.context("failed to parse redis info")?;
 
-        Ok(redis_info)
+        prepare_db(self.project.clone(), redis_info.clone()).await
     }
 }
