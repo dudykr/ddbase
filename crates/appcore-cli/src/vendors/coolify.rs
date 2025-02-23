@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use cached::proc_macro::cached;
+use reqwest::StatusCode;
 use serde_derive::{Deserialize, Serialize};
+use tracing::warn;
 
 async fn get_token() -> Result<String> {
     std::env::var("COOLIFY_TOKEN").context("COOLIFY_TOKEN is not set")
@@ -111,7 +113,7 @@ pub struct ResourceCreator {
 }
 
 #[derive(Debug, Serialize)]
-struct CreateProstgresRequest<'a> {
+struct CreatePostgresRequest<'a> {
     server_uuid: &'a str,
     project_uuid: &'a str,
     environment_name: &'a str,
@@ -173,27 +175,53 @@ async fn list_databases() -> Result<Vec<DatabaseInfo>> {
     Ok(databases)
 }
 
+async fn start_database(uuid: String) -> Result<()> {
+    let resp = reqwest::Client::new()
+        .post(format!(
+            "https://app.coolify.io/api/v1/databases/{}/start",
+            uuid
+        ))
+        .bearer_auth(get_token().await?)
+        .send()
+        .await?;
+
+    if resp.status() == StatusCode::BAD_REQUEST {
+        // Do not return error, just warn
+        warn!("failed to start database: {}", resp.text().await?);
+        return Ok(());
+    }
+
+    if !resp.status().is_success() {
+        return Err(anyhow::anyhow!(
+            "failed to start database: {}",
+            resp.text().await?
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct RedisDetail {}
 
 impl ResourceCreator {
     pub async fn create_postgres_db(
         self: Arc<Self>,
-        environemnt_name: String,
+        env_name: String,
         db_name: String,
     ) -> Result<DatabaseInfo> {
         let databases = list_databases().await?;
         if let Some(db) = databases.iter().find(|db| db.name == db_name) {
+            start_database(db.uuid.clone()).await?;
             return Ok(db.clone());
         }
 
         let resp = reqwest::Client::new()
             .post("https://app.coolify.io/api/v1/databases/postgresql")
             .bearer_auth(get_token().await?)
-            .json(&CreateProstgresRequest {
+            .json(&CreatePostgresRequest {
                 server_uuid: &self.server.uuid,
                 project_uuid: &self.project.uuid,
-                environment_name: &environemnt_name,
+                environment_name: &env_name,
                 name: &db_name,
             })
             .send()
@@ -202,6 +230,8 @@ impl ResourceCreator {
 
         let postgres_info: DatabaseInfo =
             resp.json().await.context("failed to parse postgres info")?;
+
+        start_database(postgres_info.uuid.clone()).await?;
 
         Ok(postgres_info)
     }
@@ -214,6 +244,7 @@ impl ResourceCreator {
         let databases = list_databases().await?;
 
         if let Some(db) = databases.iter().find(|db| db.name == redis_name) {
+            start_database(db.uuid.clone()).await?;
             return Ok(db.clone());
         }
 
@@ -231,6 +262,8 @@ impl ResourceCreator {
             .context("failed to create redis")?;
 
         let redis_info: DatabaseInfo = resp.json().await.context("failed to parse redis info")?;
+
+        start_database(redis_info.uuid.clone()).await?;
 
         Ok(redis_info)
     }
