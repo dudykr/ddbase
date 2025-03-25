@@ -5,7 +5,7 @@
 //!
 //! [r]: https://github.com/rayon-rs/rayon/blob/main/src/iter/plumbing/README.md
 
-use swc_parallel::join;
+use par_core::join;
 
 use super::IndexedParallelIterator;
 

@@ -21,7 +21,7 @@ use core::{
     ptr, slice,
 };
 
-use swc_parallel::join;
+use par_core::join;
 
 use crate::{
     iter::{IndexedParallelIterator, ParallelIterator},

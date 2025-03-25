@@ -4,7 +4,7 @@ description = "Switchable parallel execution core"
 edition     = { workspace = true }
 include     = ["Cargo.toml", "src/**/*.rs"]
 license     = { workspace = true }
-name        = "par-join"
+name        = "par-core"
 repository  = { workspace = true }
 version     = "1.0.0"
 

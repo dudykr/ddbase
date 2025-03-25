@@ -1,6 +1,6 @@
 use std::iter;
 
-use swc_parallel::join;
+use par_core::join;
 
 use super::{plumbing::*, *};
 

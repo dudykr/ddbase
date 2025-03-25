@@ -11,7 +11,7 @@ use std::{
     thread::Result as ThreadResult,
 };
 
-use swc_parallel::join;
+use par_core::join;
 
 use super::collect_with_consumer;
 use crate::iter::plumbing::*;

@@ -8,11 +8,11 @@ version     = "1.0.0"
 
 [dependencies]
 either   = { workspace = true }
-par-join = { version = "1.0.0", path = "../par-join", default-features = false }
+par-core = { version = "1.0.0", path = "../par-core", default-features = false }
 
 [dev-dependencies]
 chili = { workspace = true }
-par-join = { version = "1.0.0", path = "../par-join", default-features = false, features = [
+par-core = { version = "1.0.0", path = "../par-core", default-features = false, features = [
     "chili",
 ] }
 rand = { workspace = true }
