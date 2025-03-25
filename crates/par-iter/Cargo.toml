@@ -16,4 +16,4 @@ par-core = { version = "1.0.0", path = "../par-core", default-features = false, 
     "chili",
 ] }
 rand = { workspace = true }
-rand_xorshift = "0.3"
+rand_xorshift = { workspace = true }
