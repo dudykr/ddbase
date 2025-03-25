@@ -1,0 +1,19 @@
+[package]
+description = "Fork of rayon, with chili support"
+edition     = { workspace = true }
+license     = { workspace = true }
+name        = "par-iter"
+repository  = { workspace = true }
+version     = "1.0.0"
+
+[dependencies]
+either   = { workspace = true }
+par-join = { version = "1.0.0", path = "../par-join", default-features = false }
+
+[dev-dependencies]
+chili = { workspace = true }
+par-join = { version = "1.0.0", path = "../par-join", default-features = false, features = [
+    "chili",
+] }
+rand = { workspace = true }
+rand_xorshift = "0.3"
