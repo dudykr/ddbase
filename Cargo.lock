@@ -306,24 +306,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d75b0bedcc4fe52caa0e03d9f1151a323e4aa5e2d78ba3580400cd3c9e2bc4bc"
 
 [[package]]
-name = "par-iter"
-version = "1.0.0"
-dependencies = [
- "chili",
- "either",
- "par-join",
- "rand",
- "rand_xorshift",
-]
-
-[[package]]
-name = "par-join"
+name = "par-core"
 version = "1.0.0"
 dependencies = [
  "chili",
  "once_cell",
  "rayon",
  "scoped-tls",
+]
+
+[[package]]
+name = "par-iter"
+version = "1.0.0"
+dependencies = [
+ "chili",
+ "either",
+ "par-core",
+ "rand",
+ "rand_xorshift",
 ]
 
 [[package]]
