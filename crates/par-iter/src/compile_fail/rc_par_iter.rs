@@ -3,7 +3,7 @@
 // Check that we can't use the par-iter API to access contents of an
 // `Rc`.
 
-use swc_par_iter::prelude::*;
+use par_iter::prelude::*;
 use std::rc::Rc;
 
 let x = vec![Rc::new(22), Rc::new(23)];

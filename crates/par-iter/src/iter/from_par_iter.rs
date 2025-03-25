@@ -295,7 +295,7 @@ where
 ///
 /// ```
 /// use std::io::*;
-/// use swc_par_iter::prelude::*;
+/// use par_iter::prelude::*;
 ///
 /// let data = vec![1, 2, 3, 4, 5];
 /// let res: Result<()> = data.par_iter()

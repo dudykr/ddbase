@@ -35,8 +35,8 @@ use crate::{
 /// After that, you can use any of the `ParallelIterator` methods:
 ///
 /// ```
-/// use swc_par_iter::iter::ParallelBridge;
-/// use swc_par_iter::prelude::ParallelIterator;
+/// use par_iter::iter::ParallelBridge;
+/// use par_iter::prelude::ParallelIterator;
 /// use std::sync::mpsc::channel;
 ///
 /// let rx = {

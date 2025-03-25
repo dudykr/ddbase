@@ -9,8 +9,8 @@ use crate::iter::{plumbing::*, *};
 /// # Examples
 ///
 /// ```
-/// use swc_par_iter::prelude::*;
-/// use swc_par_iter::iter::once;
+/// use par_iter::prelude::*;
+/// use par_iter::iter::once;
 ///
 /// let pi = (0..1234).into_par_iter()
 ///     .chain(once(-1))
