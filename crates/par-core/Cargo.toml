@@ -9,7 +9,7 @@ repository  = { workspace = true }
 version     = "1.0.1"
 
 [features]
-default = ["chili"]
+default = ["parallel"]
 # Make it really parallel
 parallel = []
 # Use rayon for parallel execution
