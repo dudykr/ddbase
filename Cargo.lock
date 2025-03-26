@@ -300,7 +300,7 @@ checksum = "d75b0bedcc4fe52caa0e03d9f1151a323e4aa5e2d78ba3580400cd3c9e2bc4bc"
 
 [[package]]
 name = "par-core"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "chili",
  "once_cell",
@@ -310,7 +310,7 @@ dependencies = [
 
 [[package]]
 name = "par-iter"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "chili",
  "either",
