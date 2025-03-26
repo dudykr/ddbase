@@ -4,7 +4,7 @@ edition     = { workspace = true }
 license     = { workspace = true }
 name        = "par-iter"
 repository  = { workspace = true }
-version     = "1.0.0"
+version     = "1.0.1"
 
 [dependencies]
 either   = { workspace = true }
