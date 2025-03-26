@@ -4,7 +4,8 @@
 #![warn(rust_2018_idioms)]
 #![allow(clippy::all)]
 
-//! Fork of `rayon` to use parallel iterators with chili.
+//! Fork of `rayon` to use parallel iterators with chili. See [`par-core`] for
+//! more details.
 //!
 //! ---
 //!
