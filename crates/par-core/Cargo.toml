@@ -6,10 +6,10 @@ include     = ["Cargo.toml", "src/**/*.rs"]
 license     = { workspace = true }
 name        = "par-core"
 repository  = { workspace = true }
-version     = "1.0.0"
+version     = "1.0.1"
 
 [features]
-default = ["chili"]
+default = ["parallel"]
 # Make it really parallel
 parallel = []
 # Use rayon for parallel execution
