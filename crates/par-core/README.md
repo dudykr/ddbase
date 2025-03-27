@@ -19,21 +19,21 @@ If you are developing a final application, you can use cargo feature to select t
 
 ```toml
 [dependencies]
-par-core = { version = "1.0.1", features = ["chili"] }
+par-core = { version = "1.0.3", features = ["chili"] }
 ```
 
 ### `rayon`
 
 ```toml
 [dependencies]
-par-core = { version = "1.0.1", features = ["rayon"] }
+par-core = { version = "1.0.3", features = ["rayon"] }
 ```
 
 ### Disable parallelization
 
 ```toml
 [dependencies]
-par-core = { version = "1.0.1", default-features = false }
+par-core = { version = "1.0.3", default-features = false }
 ```
 
 ## Library developers
@@ -44,7 +44,7 @@ So if you are a library developer, you should specify `default-features = false`
 
 ```toml
 [dependencies]
-par-core = { version = "1.0.1", default-features = false }
+par-core = { version = "1.0.3", default-features = false }
 ```
 
 # License
