@@ -1,0 +1,13 @@
+[package]
+authors     = { workspace = true }
+description = "The runtime for ddrpc"
+edition     = { workspace = true }
+include     = ["Cargo.toml", "src/**/*.rs"]
+license     = { workspace = true }
+name        = "ddrpc-rt"
+repository  = { workspace = true }
+version     = "0.1.0"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
