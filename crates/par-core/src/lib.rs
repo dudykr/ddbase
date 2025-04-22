@@ -127,7 +127,7 @@ impl<'a> MaybeScope<'a> {
 }
 
 #[cfg(not(feature = "chili"))]
-pub struct Scope<'a>(std::marker::PhantomData<&'a ()>);
+pub struct Scope<'a>(std::marker::PhantomData<&'a mut &'a ()>);
 
 #[cfg(feature = "chili")]
 pub struct Scope<'a>(&'a mut chili::Scope<'a>);
