@@ -1,11 +1,14 @@
 use std::{
     borrow::{Borrow, BorrowMut, Cow},
     cmp::Ordering,
+    convert::Infallible,
     ffi::OsStr,
     fmt::{self, Debug, Display},
-    ops::{Add, AddAssign, Deref, DerefMut},
+    net::{SocketAddr, ToSocketAddrs},
+    ops::{Add, AddAssign, Deref, DerefMut, Index, IndexMut},
     path::Path,
-    str::Utf8Error,
+    slice::SliceIndex,
+    str::{FromStr, Utf8Error},
 };
 
 use bytes::{Bytes, BytesMut};
@@ -409,6 +412,14 @@ impl From<BytesString> for Bytes {
     }
 }
 
+impl From<char> for BytesString {
+    fn from(ch: char) -> Self {
+        let mut bytes = BytesString::with_capacity(ch.len_utf8());
+        bytes.push(ch);
+        bytes
+    }
+}
+
 impl PartialEq<str> for BytesString {
     fn eq(&self, other: &str) -> bool {
         self.as_str() == other
@@ -417,6 +428,12 @@ impl PartialEq<str> for BytesString {
 
 impl PartialEq<&'_ str> for BytesString {
     fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<Cow<'_, str>> for BytesString {
+    fn eq(&self, other: &Cow<'_, str>) -> bool {
         self.as_str() == *other
     }
 }
@@ -595,5 +612,91 @@ impl Extend<BytesString> for BytesString {
         for s in iter {
             self.bytes.extend(s.bytes);
         }
+    }
+}
+
+impl FromIterator<char> for BytesString {
+    fn from_iter<T: IntoIterator<Item = char>>(iter: T) -> Self {
+        let mut bytes = BytesString::new();
+        bytes.extend(iter);
+        bytes
+    }
+}
+
+impl<'a> FromIterator<&'a str> for BytesString {
+    fn from_iter<T: IntoIterator<Item = &'a str>>(iter: T) -> Self {
+        let mut bytes = BytesString::new();
+        bytes.extend(iter);
+        bytes
+    }
+}
+
+impl FromIterator<Box<str>> for BytesString {
+    fn from_iter<T: IntoIterator<Item = Box<str>>>(iter: T) -> Self {
+        let mut bytes = BytesString::new();
+        bytes.extend(iter);
+        bytes
+    }
+}
+
+impl<'a> FromIterator<Cow<'a, str>> for BytesString {
+    fn from_iter<T: IntoIterator<Item = Cow<'a, str>>>(iter: T) -> Self {
+        let mut bytes = BytesString::new();
+        bytes.extend(iter);
+        bytes
+    }
+}
+
+impl FromIterator<String> for BytesString {
+    fn from_iter<T: IntoIterator<Item = String>>(iter: T) -> Self {
+        let mut bytes = BytesString::new();
+        bytes.extend(iter);
+        bytes
+    }
+}
+
+impl FromIterator<BytesString> for BytesString {
+    fn from_iter<T: IntoIterator<Item = BytesString>>(iter: T) -> Self {
+        let mut bytes = BytesString::new();
+        bytes.extend(iter);
+        bytes
+    }
+}
+
+impl FromStr for BytesString {
+    type Err = Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self {
+            bytes: BytesMut::from(s),
+        })
+    }
+}
+
+impl<I> Index<I> for BytesString
+where
+    I: SliceIndex<str>,
+{
+    type Output = I::Output;
+
+    fn index(&self, index: I) -> &Self::Output {
+        self.as_str().index(index)
+    }
+}
+
+impl<I> IndexMut<I> for BytesString
+where
+    I: SliceIndex<str>,
+{
+    fn index_mut(&mut self, index: I) -> &mut Self::Output {
+        self.as_mut_str().index_mut(index)
+    }
+}
+
+impl ToSocketAddrs for BytesString {
+    type Iter = std::vec::IntoIter<SocketAddr>;
+
+    fn to_socket_addrs(&self) -> Result<Self::Iter, std::io::Error> {
+        self.as_str().to_socket_addrs()
     }
 }
