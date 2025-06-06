@@ -395,3 +395,29 @@ impl TryFrom<&'static [u8]> for BytesStr {
         Self::from_static_utf8_slice(value)
     }
 }
+
+#[cfg(feature = "serde")]
+mod serde_impl {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::*;
+
+    impl<'de> Deserialize<'de> for BytesStr {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let s = String::deserialize(deserializer)?;
+            Ok(Self::from(s))
+        }
+    }
+
+    impl Serialize for BytesStr {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            serializer.serialize_str(self.as_str())
+        }
+    }
+}
