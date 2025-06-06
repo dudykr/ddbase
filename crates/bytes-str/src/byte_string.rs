@@ -1,6 +1,7 @@
 use std::{
     borrow::Borrow,
     ops::{Deref, DerefMut},
+    str::Utf8Error,
 };
 
 use bytes::{Bytes, BytesMut};
@@ -304,6 +305,25 @@ impl BytesString {
     /// UTF-8.
     pub unsafe fn from_bytes_unchecked(bytes: BytesMut) -> Self {
         Self { bytes }
+    }
+
+    /// Converts a [BytesMut] into a [ByteString] if the bytes are valid UTF-8.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [Utf8Error] if the bytes are not valid UTF-8.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::ByteString;
+    ///
+    /// let s = ByteString::from_utf8(b"hello".to_vec());
+    /// ```
+    pub fn from_utf8(bytes: BytesMut) -> Result<Self, Utf8Error> {
+        std::str::from_utf8(bytes.as_ref())?;
+
+        Ok(Self { bytes })
     }
 }
 
