@@ -4,6 +4,7 @@ use std::{
     convert::Infallible,
     ffi::OsStr,
     fmt::{self, Debug, Display},
+    hash::{Hash, Hasher},
     net::{SocketAddr, ToSocketAddrs},
     ops::{Add, AddAssign, Deref, DerefMut, Index, IndexMut},
     path::Path,
@@ -14,7 +15,7 @@ use std::{
 use bytes::{Bytes, BytesMut};
 
 /// [String] but backed by a [BytesMut]
-#[derive(Clone, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct BytesString {
     pub(crate) bytes: BytesMut,
 }
@@ -698,5 +699,12 @@ impl ToSocketAddrs for BytesString {
 
     fn to_socket_addrs(&self) -> Result<Self::Iter, std::io::Error> {
         self.as_str().to_socket_addrs()
+    }
+}
+
+/// This produces the same hash as [str]
+impl Hash for BytesString {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_str().hash(state);
     }
 }
