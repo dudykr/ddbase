@@ -133,6 +133,20 @@ impl BytesStr {
         })
     }
 
+    /// Creates a new BytesStr from a [Bytes] without checking if the bytes
+    /// are valid UTF-8.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it does not check if the bytes are valid
+    /// UTF-8. If the bytes are not valid UTF-8, the resulting BytesStr will
+    /// be invalid.
+    pub unsafe fn from_utf8_slice_unchecked(bytes: &[u8]) -> Self {
+        Self {
+            bytes: Bytes::copy_from_slice(bytes),
+        }
+    }
+
     /// Creates a new BytesStr from a static UTF-8 slice.
     ///
     /// # Examples
@@ -150,6 +164,20 @@ impl BytesStr {
         Ok(Self {
             bytes: Bytes::from_static(bytes),
         })
+    }
+
+    /// Creates a new BytesStr from a static UTF-8 slice without checking if the
+    /// bytes are valid UTF-8.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it does not check if the bytes are valid
+    /// UTF-8. If the bytes are not valid UTF-8, the resulting BytesStr will
+    /// be invalid.
+    pub unsafe fn from_static_utf8_slice_unchecked(bytes: &'static [u8]) -> Self {
+        Self {
+            bytes: Bytes::from_static(bytes),
+        }
     }
 
     /// Returns a string slice containing the entire BytesStr.
