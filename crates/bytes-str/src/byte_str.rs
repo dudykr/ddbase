@@ -17,7 +17,27 @@ use crate::BytesString;
 /// A reference-counted `str` backed by [Bytes].
 ///
 /// Clone is cheap thanks to [Bytes].
+///
+///
+/// # Features
+///
+/// ## `rkyv`
+///
+/// If the `rkyv` feature is enabled, the [BytesStr] type will be
+/// [rkyv::Archive], [rkyv::Serialize], and [rkyv::Deserialize].
+///
+///
+/// ## `serde`
+///
+/// If the `serde` feature is enabled, the [BytesStr] type will be
+/// [serde::Serialize] and [serde::Deserialize].
+///
+/// The [BytesStr] type will be serialized as a [str] type.
 #[derive(Clone, Default, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)
+)]
 pub struct BytesStr {
     pub(crate) bytes: Bytes,
 }
