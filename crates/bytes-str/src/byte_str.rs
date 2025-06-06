@@ -14,7 +14,9 @@ use bytes::Bytes;
 
 use crate::BytesString;
 
-/// [str], but backed by [Bytes].
+/// A reference-counted `str` backed by [Bytes].
+///
+/// Clone is cheap thanks to [Bytes].
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct BytesStr {
     pub(crate) bytes: Bytes,
@@ -66,6 +68,26 @@ impl BytesStr {
         std::str::from_utf8(&bytes)?;
 
         Ok(Self { bytes })
+    }
+
+    /// Creates a new BytesStr from a [Vec<u8>].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesStr;
+    /// use bytes::Bytes;
+    ///
+    /// let s = BytesStr::from_utf8_vec(b"hello".to_vec()).unwrap();
+    ///
+    /// assert_eq!(s.as_str(), "hello");
+    /// ```
+    pub fn from_utf8_vec(bytes: Vec<u8>) -> Result<Self, Utf8Error> {
+        std::str::from_utf8(&bytes)?;
+
+        Ok(Self {
+            bytes: Bytes::from(bytes),
+        })
     }
 
     /// Creates a new BytesStr from a [Bytes].
