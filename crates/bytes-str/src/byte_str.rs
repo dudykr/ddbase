@@ -242,3 +242,11 @@ impl Hash for BytesStr {
         self.as_str().hash(state);
     }
 }
+
+impl TryFrom<&'static [u8]> for BytesStr {
+    type Error = Utf8Error;
+
+    fn try_from(value: &'static [u8]) -> Result<Self, Self::Error> {
+        Self::from_static_utf8_slice(value)
+    }
+}
