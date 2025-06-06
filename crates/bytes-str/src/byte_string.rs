@@ -245,31 +245,63 @@ impl BytesString {
     pub fn push_str(&mut self, s: &str) {
         self.bytes.extend_from_slice(s.as_bytes());
     }
+
+    /// Returns a string slice containing the entire ByteString.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::ByteString;
+    ///
+    /// let s = ByteString::from("hello");
+    ///
+    /// assert_eq!(s.as_str(), "hello");
+    /// ```
+    pub fn as_str(&self) -> &str {
+        unsafe { std::str::from_utf8_unchecked(&self.bytes) }
+    }
+
+    /// Returns a mutable string slice containing the entire ByteString.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::ByteString;
+    ///
+    /// let mut s = ByteString::from("hello");
+    ///
+    /// s.as_mut_str().make_ascii_uppercase();
+    ///
+    /// assert_eq!(s, "HELLO");
+    /// ```
+    pub fn as_mut_str(&mut self) -> &mut str {
+        unsafe { std::str::from_utf8_unchecked_mut(&mut self.bytes) }
+    }
 }
 
 impl Deref for BytesString {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { std::str::from_utf8_unchecked(&self.bytes) }
+        self.as_str()
     }
 }
 
 impl DerefMut for BytesString {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { std::str::from_utf8_unchecked_mut(&mut self.bytes) }
+        self.as_mut_str()
     }
 }
 
 impl AsRef<str> for BytesString {
     fn as_ref(&self) -> &str {
-        self.deref()
+        self.as_str()
     }
 }
 
 impl Borrow<str> for BytesString {
     fn borrow(&self) -> &str {
-        self.as_ref()
+        self.as_str()
     }
 }
 
