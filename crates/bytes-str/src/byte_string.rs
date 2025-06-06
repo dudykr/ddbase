@@ -102,6 +102,30 @@ impl BytesString {
         self.bytes.reserve(additional);
     }
 
+    /// Splits the string into two at the given index.
+    ///
+    /// Returns a newly allocated String. `self` contains bytes at indices
+    /// greater than `at`, and the returned string contains bytes at indices
+    /// less than `at`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::ByteString;
+    ///
+    /// let mut s = ByteString::from("hello");
+    ///
+    /// let other = s.split_off(2);
+    ///
+    /// assert_eq!(s, "he");
+    /// assert_eq!(other, "llo");
+    /// ```
+    pub fn split_off(&mut self, at: usize) -> Self {
+        Self {
+            bytes: self.bytes.split_off(at),
+        }
+    }
+
     /// Returns a byte slice of this String’s contents.
     ///
     /// # Examples
