@@ -147,8 +147,57 @@ impl BytesString {
         }
     }
 
+    /// Clears the ByteString, removing all bytes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::ByteString;
+    ///
+    /// let mut s = ByteString::from("hello");
+    ///
+    /// s.clear();
+    ///
+    /// assert!(s.is_empty());
+    /// ```
     pub fn clear(&mut self) {
         self.bytes.clear();
+    }
+
+    /// Appends a character to the end of this ByteString.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::ByteString;
+    ///
+    /// let mut s = ByteString::from("hello");
+    ///
+    /// s.push(' ');
+    ///
+    /// assert_eq!(s, "hello ");
+    /// ```
+    pub fn push(&mut self, ch: char) {
+        let mut buf = [0; 4];
+        let bytes = ch.encode_utf8(&mut buf);
+        self.bytes.extend_from_slice(bytes.as_bytes());
+    }
+
+    /// Appends a string slice to the end of this ByteString.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::ByteString;
+    ///
+    /// let mut s = ByteString::from("hello");
+    ///
+    /// s.push_str(" world");
+    ///
+    /// assert_eq!(s, "hello world");
+    /// ```
+    pub fn push_str(&mut self, s: &str) {
+        self.bytes.extend_from_slice(s.as_bytes());
     }
 }
 
