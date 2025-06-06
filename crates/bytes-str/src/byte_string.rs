@@ -1,7 +1,8 @@
 use std::{
     borrow::{Borrow, BorrowMut},
+    cmp::Ordering,
     ffi::OsStr,
-    fmt::{self, Debug},
+    fmt::{self, Debug, Display},
     ops::{Add, AddAssign, Deref, DerefMut},
     path::Path,
     str::Utf8Error,
@@ -10,7 +11,7 @@ use std::{
 use bytes::{Bytes, BytesMut};
 
 /// [String] but backed by a [BytesMut]
-#[derive(Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Default, PartialEq, Eq, Hash)]
 pub struct BytesString {
     pub(crate) bytes: BytesMut,
 }
@@ -513,5 +514,23 @@ impl BorrowMut<str> for BytesString {
 impl Debug for BytesString {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Debug::fmt(self.as_str(), f)
+    }
+}
+
+impl Display for BytesString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Display::fmt(self.as_str(), f)
+    }
+}
+
+impl PartialOrd for BytesString {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for BytesString {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_str().cmp(other.as_str())
     }
 }
