@@ -327,6 +327,28 @@ impl BytesString {
 
         Ok(Self { bytes })
     }
+
+    /// Converts a slice of bytes into a [BytesString] if the bytes are valid
+    /// UTF-8.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [Utf8Error] if the bytes are not valid UTF-8.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesString;
+    ///
+    /// let s = BytesString::from_utf8_slice(b"hello");
+    /// ```
+    pub fn from_utf8_slice(bytes: &[u8]) -> Result<Self, Utf8Error> {
+        std::str::from_utf8(bytes)?;
+
+        Ok(Self {
+            bytes: BytesMut::from(bytes),
+        })
+    }
 }
 
 impl Deref for BytesString {
