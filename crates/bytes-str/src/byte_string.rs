@@ -1,13 +1,16 @@
 use std::{
-    borrow::Borrow,
-    ops::{Deref, DerefMut},
+    borrow::{Borrow, BorrowMut},
+    ffi::OsStr,
+    fmt::{self, Debug},
+    ops::{Add, AddAssign, Deref, DerefMut},
+    path::Path,
     str::Utf8Error,
 };
 
 use bytes::{Bytes, BytesMut};
 
 /// [String] but backed by a [BytesMut]
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct BytesString {
     pub(crate) bytes: BytesMut,
 }
@@ -444,5 +447,71 @@ impl PartialEq<String> for BytesString {
 impl PartialEq<BytesString> for String {
     fn eq(&self, other: &BytesString) -> bool {
         self == other.as_str()
+    }
+}
+
+impl Add<&str> for BytesString {
+    type Output = Self;
+
+    fn add(mut self, other: &str) -> Self::Output {
+        self += other;
+        self
+    }
+}
+
+impl AddAssign<&str> for BytesString {
+    fn add_assign(&mut self, other: &str) {
+        self.push_str(other);
+    }
+}
+
+impl Add<BytesString> for BytesString {
+    type Output = Self;
+
+    fn add(mut self, other: BytesString) -> Self::Output {
+        self += other;
+        self
+    }
+}
+
+impl AddAssign<BytesString> for BytesString {
+    fn add_assign(&mut self, other: BytesString) {
+        self.bytes.extend(other.bytes);
+    }
+}
+
+impl AsMut<str> for BytesString {
+    fn as_mut(&mut self) -> &mut str {
+        self.as_mut_str()
+    }
+}
+
+impl AsRef<[u8]> for BytesString {
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+impl AsRef<OsStr> for BytesString {
+    fn as_ref(&self) -> &OsStr {
+        OsStr::new(self.as_str())
+    }
+}
+
+impl AsRef<Path> for BytesString {
+    fn as_ref(&self) -> &Path {
+        Path::new(self.as_str())
+    }
+}
+
+impl BorrowMut<str> for BytesString {
+    fn borrow_mut(&mut self) -> &mut str {
+        self.as_mut_str()
+    }
+}
+
+impl Debug for BytesString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Debug::fmt(self.as_str(), f)
     }
 }
