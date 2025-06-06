@@ -348,3 +348,15 @@ impl From<&str> for BytesString {
         }
     }
 }
+
+impl From<BytesString> for BytesMut {
+    fn from(s: BytesString) -> Self {
+        s.bytes
+    }
+}
+
+impl From<BytesString> for Bytes {
+    fn from(s: BytesString) -> Self {
+        s.bytes.into()
+    }
+}
