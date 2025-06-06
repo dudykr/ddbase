@@ -7,11 +7,11 @@ use bytes::{Bytes, BytesMut};
 
 /// [String] but backed by a [BytesMut]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ByteString {
+pub struct BytesString {
     bytes: BytesMut,
 }
 
-impl ByteString {
+impl BytesString {
     /// Returns a new, empty ByteString.
     ///
     /// # Examples
@@ -152,7 +152,7 @@ impl ByteString {
     }
 }
 
-impl Deref for ByteString {
+impl Deref for BytesString {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
@@ -160,25 +160,25 @@ impl Deref for ByteString {
     }
 }
 
-impl DerefMut for ByteString {
+impl DerefMut for BytesString {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { std::str::from_utf8_unchecked_mut(&mut self.bytes) }
     }
 }
 
-impl AsRef<str> for ByteString {
+impl AsRef<str> for BytesString {
     fn as_ref(&self) -> &str {
         self.deref()
     }
 }
 
-impl Borrow<str> for ByteString {
+impl Borrow<str> for BytesString {
     fn borrow(&self) -> &str {
         self.as_ref()
     }
 }
 
-impl From<String> for ByteString {
+impl From<String> for BytesString {
     fn from(s: String) -> Self {
         Self {
             bytes: Bytes::from(s.into_bytes()).into(),
@@ -186,7 +186,7 @@ impl From<String> for ByteString {
     }
 }
 
-impl From<&str> for ByteString {
+impl From<&str> for BytesString {
     fn from(s: &str) -> Self {
         Self {
             bytes: BytesMut::from(s),
