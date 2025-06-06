@@ -90,6 +90,29 @@ impl BytesStr {
         })
     }
 
+    /// Creates a new BytesStr from a [Bytes] without checking if the bytes
+    /// are valid UTF-8.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it does not check if the bytes are valid
+    /// UTF-8. If the bytes are not valid UTF-8, the resulting BytesStr will
+    pub unsafe fn from_utf8_unchecked(bytes: Bytes) -> Self {
+        Self { bytes }
+    }
+
+    /// Creates a new BytesStr from a [Vec<u8>] without checking if the bytes
+    /// are valid UTF-8.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it does not check if the bytes are valid
+    /// UTF-8. If the bytes are not valid UTF-8, the resulting BytesStr will
+    /// be invalid.
+    pub unsafe fn from_utf8_vec_unchecked(bytes: Vec<u8>) -> Self {
+        Self::from_utf8_unchecked(Bytes::from(bytes))
+    }
+
     /// Creates a new BytesStr from a [Bytes].
     ///
     /// # Examples
