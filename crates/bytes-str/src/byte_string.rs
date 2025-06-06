@@ -8,7 +8,7 @@ use bytes::{Bytes, BytesMut};
 /// [String] but backed by a [BytesMut]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct BytesString {
-    bytes: BytesMut,
+    pub(crate) bytes: BytesMut,
 }
 
 impl BytesString {

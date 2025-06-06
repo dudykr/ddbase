@@ -2,10 +2,12 @@ use std::{borrow::Borrow, ops::Deref};
 
 use bytes::Bytes;
 
+use crate::BytesString;
+
 /// [str], but backed by [Bytes].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct BytesStr {
-    bytes: Bytes,
+    pub(crate) bytes: Bytes,
 }
 
 impl Deref for BytesStr {
@@ -40,6 +42,22 @@ impl From<&'static str> for BytesStr {
     fn from(s: &'static str) -> Self {
         Self {
             bytes: Bytes::from_static(s.as_bytes()),
+        }
+    }
+}
+
+impl From<BytesStr> for BytesString {
+    fn from(s: BytesStr) -> Self {
+        Self {
+            bytes: s.bytes.into(),
+        }
+    }
+}
+
+impl From<BytesString> for BytesStr {
+    fn from(s: BytesString) -> Self {
+        Self {
+            bytes: s.bytes.into(),
         }
     }
 }
