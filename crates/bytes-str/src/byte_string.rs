@@ -13,14 +13,14 @@ pub struct BytesString {
 }
 
 impl BytesString {
-    /// Returns a new, empty ByteString.
+    /// Returns a new, empty BytesString.
     ///
     /// # Examples
     ///
     /// ```
-    /// use bytes_str::ByteString;
+    /// use bytes_str::BytesString;
     ///
-    /// let s = ByteString::new();
+    /// let s = BytesString::new();
     ///
     /// assert!(s.is_empty());
     /// ```
@@ -30,7 +30,7 @@ impl BytesString {
         }
     }
 
-    /// Returns a new, empty ByteString with the specified capacity.
+    /// Returns a new, empty BytesString with the specified capacity.
     ///
     /// The capacity is the size of the internal buffer in bytes.
     ///
@@ -39,9 +39,9 @@ impl BytesString {
     /// # Examples
     ///
     /// ```
-    /// use bytes_str::ByteString;
+    /// use bytes_str::BytesString;
     ///
-    /// let s = ByteString::with_capacity(10);
+    /// let s = BytesString::with_capacity(10);
     ///
     /// assert!(s.capacity() >= 10);
     /// ```
@@ -56,9 +56,9 @@ impl BytesString {
     /// # Examples
     ///
     /// ```
-    /// use bytes_str::ByteString;
+    /// use bytes_str::BytesString;
     ///
-    /// let s = ByteString::from("hello");
+    /// let s = BytesString::from("hello");
     ///
     /// assert_eq!(s.len(), 5);
     /// ```
@@ -71,9 +71,9 @@ impl BytesString {
     /// # Examples
     ///
     /// ```
-    /// use bytes_str::ByteString;
+    /// use bytes_str::BytesString;
     ///
-    /// let s = ByteString::from("hello");
+    /// let s = BytesString::from("hello");
     ///
     /// assert!(s.capacity() >= 5);
     /// ```
@@ -91,9 +91,9 @@ impl BytesString {
     /// # Examples
     ///
     /// ```
-    /// use bytes_str::ByteString;
+    /// use bytes_str::BytesString;
     ///
-    /// let mut s = ByteString::from("hello");
+    /// let mut s = BytesString::from("hello");
     ///
     /// s.reserve(10);
     ///
@@ -112,9 +112,9 @@ impl BytesString {
     /// # Examples
     ///
     /// ```
-    /// use bytes_str::ByteString;
+    /// use bytes_str::BytesString;
     ///
-    /// let mut s = ByteString::from("hello");
+    /// let mut s = BytesString::from("hello");
     ///
     /// let other = s.split_off(2);
     ///
@@ -132,9 +132,9 @@ impl BytesString {
     /// # Examples
     ///
     /// ```
-    /// use bytes_str::ByteString;
+    /// use bytes_str::BytesString;
     ///
-    /// let s = ByteString::from("hello");
+    /// let s = BytesString::from("hello");
     ///
     /// assert_eq!(s.as_bytes(), b"hello");
     /// ```
@@ -142,14 +142,14 @@ impl BytesString {
         self.bytes.as_ref()
     }
 
-    /// Returns true if the ByteString has a length of 0.
+    /// Returns true if the BytesString has a length of 0.
     ///
     /// # Examples
     ///
     /// ```
-    /// use bytes_str::ByteString;
+    /// use bytes_str::BytesString;
     ///
-    /// let s = ByteString::new();
+    /// let s = BytesString::new();
     ///
     /// assert!(s.is_empty());
     /// ```
@@ -157,7 +157,7 @@ impl BytesString {
         self.bytes.is_empty()
     }
 
-    /// Truncates the ByteString to the specified length.
+    /// Truncates the BytesString to the specified length.
     ///
     /// If new_len is greater than or equal to the string’s current length, this
     /// has no effect.
@@ -167,7 +167,7 @@ impl BytesString {
     ///
     /// # Arguments
     ///
-    /// * `new_len` - The new length of the ByteString
+    /// * `new_len` - The new length of the BytesString
     ///
     /// # Panics
     ///
@@ -176,9 +176,9 @@ impl BytesString {
     /// # Examples
     ///
     /// ```
-    /// use bytes_str::ByteString;
+    /// use bytes_str::BytesString;
     ///
-    /// let mut s = ByteString::from("hello");
+    /// let mut s = BytesString::from("hello");
     ///
     /// s.truncate(3);
     ///
@@ -194,14 +194,14 @@ impl BytesString {
         }
     }
 
-    /// Clears the ByteString, removing all bytes.
+    /// Clears the BytesString, removing all bytes.
     ///
     /// # Examples
     ///
     /// ```
-    /// use bytes_str::ByteString;
+    /// use bytes_str::BytesString;
     ///
-    /// let mut s = ByteString::from("hello");
+    /// let mut s = BytesString::from("hello");
     ///
     /// s.clear();
     ///
@@ -211,14 +211,14 @@ impl BytesString {
         self.bytes.clear();
     }
 
-    /// Appends a character to the end of this ByteString.
+    /// Appends a character to the end of this BytesString.
     ///
     /// # Examples
     ///
     /// ```
-    /// use bytes_str::ByteString;
+    /// use bytes_str::BytesString;
     ///
-    /// let mut s = ByteString::from("hello");
+    /// let mut s = BytesString::from("hello");
     ///
     /// s.push(' ');
     ///
@@ -230,14 +230,14 @@ impl BytesString {
         self.bytes.extend_from_slice(bytes.as_bytes());
     }
 
-    /// Appends a string slice to the end of this ByteString.
+    /// Appends a string slice to the end of this BytesString.
     ///
     /// # Examples
     ///
     /// ```
-    /// use bytes_str::ByteString;
+    /// use bytes_str::BytesString;
     ///
-    /// let mut s = ByteString::from("hello");
+    /// let mut s = BytesString::from("hello");
     ///
     /// s.push_str(" world");
     ///
@@ -247,14 +247,14 @@ impl BytesString {
         self.bytes.extend_from_slice(s.as_bytes());
     }
 
-    /// Returns a string slice containing the entire ByteString.
+    /// Returns a string slice containing the entire BytesString.
     ///
     /// # Examples
     ///
     /// ```
-    /// use bytes_str::ByteString;
+    /// use bytes_str::BytesString;
     ///
-    /// let s = ByteString::from("hello");
+    /// let s = BytesString::from("hello");
     ///
     /// assert_eq!(s.as_str(), "hello");
     /// ```
@@ -262,14 +262,14 @@ impl BytesString {
         unsafe { std::str::from_utf8_unchecked(&self.bytes) }
     }
 
-    /// Returns a mutable string slice containing the entire ByteString.
+    /// Returns a mutable string slice containing the entire BytesString.
     ///
     /// # Examples
     ///
     /// ```
-    /// use bytes_str::ByteString;
+    /// use bytes_str::BytesString;
     ///
-    /// let mut s = ByteString::from("hello");
+    /// let mut s = BytesString::from("hello");
     ///
     /// s.as_mut_str().make_ascii_uppercase();
     ///
@@ -279,14 +279,14 @@ impl BytesString {
         unsafe { std::str::from_utf8_unchecked_mut(&mut self.bytes) }
     }
 
-    /// Converts the ByteString into a [BytesMut].
+    /// Converts the BytesString into a [BytesMut].
     ///
     /// # Examples
     ///
     /// ```
-    /// use bytes_str::ByteString;
+    /// use bytes_str::BytesString;
     ///
-    /// let s = ByteString::from("hello");
+    /// let s = BytesString::from("hello");
     ///
     /// let bytes = s.into_bytes();
     ///
@@ -296,7 +296,7 @@ impl BytesString {
         self.bytes
     }
 
-    /// Converts a [BytesMut] into a [ByteString] without checking if the bytes
+    /// Converts a [BytesMut] into a [BytesString] without checking if the bytes
     /// are valid UTF-8.
     ///
     /// # Safety
@@ -307,7 +307,7 @@ impl BytesString {
         Self { bytes }
     }
 
-    /// Converts a [BytesMut] into a [ByteString] if the bytes are valid UTF-8.
+    /// Converts a [BytesMut] into a [BytesString] if the bytes are valid UTF-8.
     ///
     /// # Errors
     ///
@@ -316,9 +316,9 @@ impl BytesString {
     /// # Examples
     ///
     /// ```
-    /// use bytes_str::ByteString;
+    /// use bytes_str::BytesString;
     ///
-    /// let s = ByteString::from_utf8(b"hello".to_vec());
+    /// let s = BytesString::from_utf8(b"hello".to_vec());
     /// ```
     pub fn from_utf8(bytes: BytesMut) -> Result<Self, Utf8Error> {
         std::str::from_utf8(bytes.as_ref())?;
