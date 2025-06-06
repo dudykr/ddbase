@@ -277,6 +277,34 @@ impl BytesString {
     pub fn as_mut_str(&mut self) -> &mut str {
         unsafe { std::str::from_utf8_unchecked_mut(&mut self.bytes) }
     }
+
+    /// Converts the ByteString into a [BytesMut].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::ByteString;
+    ///
+    /// let s = ByteString::from("hello");
+    ///
+    /// let bytes = s.into_bytes();
+    ///
+    /// assert_eq!(bytes, b"hello");
+    /// ```
+    pub fn into_bytes(self) -> BytesMut {
+        self.bytes
+    }
+
+    /// Converts a [BytesMut] into a [ByteString] without checking if the bytes
+    /// are valid UTF-8.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it does not check if the bytes are valid
+    /// UTF-8.
+    pub unsafe fn from_bytes_unchecked(bytes: BytesMut) -> Self {
+        Self { bytes }
+    }
 }
 
 impl Deref for BytesString {
