@@ -285,12 +285,13 @@ impl BytesString {
     ///
     /// ```
     /// use bytes_str::BytesString;
+    /// use bytes::BytesMut;
     ///
     /// let s = BytesString::from("hello");
     ///
     /// let bytes = s.into_bytes();
     ///
-    /// assert_eq!(bytes, b"hello");
+    /// assert_eq!(bytes, BytesMut::from(&b"hello"[..]));
     /// ```
     pub fn into_bytes(self) -> BytesMut {
         self.bytes
@@ -317,8 +318,9 @@ impl BytesString {
     ///
     /// ```
     /// use bytes_str::BytesString;
+    /// use bytes::BytesMut;
     ///
-    /// let s = BytesString::from_utf8(b"hello".to_vec());
+    /// let s = BytesString::from_utf8(BytesMut::from(&b"hello"[..]));
     /// ```
     pub fn from_utf8(bytes: BytesMut) -> Result<Self, Utf8Error> {
         std::str::from_utf8(bytes.as_ref())?;
@@ -378,5 +380,47 @@ impl From<BytesString> for BytesMut {
 impl From<BytesString> for Bytes {
     fn from(s: BytesString) -> Self {
         s.bytes.into()
+    }
+}
+
+impl PartialEq<str> for BytesString {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl PartialEq<&'_ str> for BytesString {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<BytesString> for str {
+    fn eq(&self, other: &BytesString) -> bool {
+        self == other.as_str()
+    }
+}
+
+impl PartialEq<BytesString> for &'_ str {
+    fn eq(&self, other: &BytesString) -> bool {
+        *self == other.as_str()
+    }
+}
+
+impl PartialEq<BytesString> for Bytes {
+    fn eq(&self, other: &BytesString) -> bool {
+        self == other.as_bytes()
+    }
+}
+
+impl PartialEq<String> for BytesString {
+    fn eq(&self, other: &String) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl PartialEq<BytesString> for String {
+    fn eq(&self, other: &BytesString) -> bool {
+        self == other.as_str()
     }
 }
