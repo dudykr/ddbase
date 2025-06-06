@@ -80,6 +80,28 @@ impl BytesString {
         self.bytes.capacity()
     }
 
+    /// Reserves the minimum capacity for exactly `additional` more bytes to be
+    /// stored without reallocating.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the new capacity overflows usize.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::ByteString;
+    ///
+    /// let mut s = ByteString::from("hello");
+    ///
+    /// s.reserve(10);
+    ///
+    /// assert!(s.capacity() >= 15);
+    /// ```
+    pub fn reserve(&mut self, additional: usize) {
+        self.bytes.reserve(additional);
+    }
+
     /// Returns a byte slice of this String’s contents.
     ///
     /// # Examples

@@ -10,6 +10,8 @@ pub struct BytesStr {
     pub(crate) bytes: Bytes,
 }
 
+impl BytesStr {}
+
 impl Deref for BytesStr {
     type Target = str;
 
