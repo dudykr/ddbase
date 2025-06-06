@@ -11,6 +11,147 @@ pub struct ByteString {
     bytes: BytesMut,
 }
 
+impl ByteString {
+    /// Returns a new, empty ByteString.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::ByteString;
+    ///
+    /// let s = ByteString::new();
+    ///
+    /// assert!(s.is_empty());
+    /// ```
+    pub fn new() -> Self {
+        Self {
+            bytes: BytesMut::new(),
+        }
+    }
+
+    /// Returns a new, empty ByteString with the specified capacity.
+    ///
+    /// The capacity is the size of the internal buffer in bytes.
+    ///
+    /// The actual capacity may be larger than the specified capacity.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::ByteString;
+    ///
+    /// let s = ByteString::with_capacity(10);
+    ///
+    /// assert!(s.capacity() >= 10);
+    /// ```
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            bytes: BytesMut::with_capacity(capacity),
+        }
+    }
+
+    /// Returns the length of this String, in bytes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::ByteString;
+    ///
+    /// let s = ByteString::from("hello");
+    ///
+    /// assert_eq!(s.len(), 5);
+    /// ```
+    pub fn len(&self) -> usize {
+        self.bytes.len()
+    }
+
+    /// Returns the capacity of this String, in bytes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::ByteString;
+    ///
+    /// let s = ByteString::from("hello");
+    ///
+    /// assert!(s.capacity() >= 5);
+    /// ```
+    pub fn capacity(&self) -> usize {
+        self.bytes.capacity()
+    }
+
+    /// Returns a byte slice of this String’s contents.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::ByteString;
+    ///
+    /// let s = ByteString::from("hello");
+    ///
+    /// assert_eq!(s.as_bytes(), b"hello");
+    /// ```
+    pub fn as_bytes(&self) -> &[u8] {
+        self.bytes.as_ref()
+    }
+
+    /// Returns true if the ByteString has a length of 0.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::ByteString;
+    ///
+    /// let s = ByteString::new();
+    ///
+    /// assert!(s.is_empty());
+    /// ```
+    pub fn is_empty(&self) -> bool {
+        self.bytes.is_empty()
+    }
+
+    /// Truncates the ByteString to the specified length.
+    ///
+    /// If new_len is greater than or equal to the string’s current length, this
+    /// has no effect.
+    ///
+    /// Note that this method has no effect on the allocated capacity of the
+    /// string
+    ///
+    /// # Arguments
+    ///
+    /// * `new_len` - The new length of the ByteString
+    ///
+    /// # Panics
+    ///
+    /// Panics if new_len does not lie on a char boundary.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::ByteString;
+    ///
+    /// let mut s = ByteString::from("hello");
+    ///
+    /// s.truncate(3);
+    ///
+    /// assert_eq!(s, "hel");
+    /// ```
+    ///
+    ///
+    /// Shortens this String to the specified length.
+    pub fn truncate(&mut self, new_len: usize) {
+        if new_len <= self.len() {
+            assert!(self.is_char_boundary(new_len));
+            self.bytes.truncate(new_len);
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.bytes.clear();
+    }
+}
+
 impl Deref for ByteString {
     type Target = str;
 
