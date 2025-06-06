@@ -6,7 +6,13 @@ include     = ["Cargo.toml", "src/**/*.rs"]
 license     = { workspace = true }
 name        = "bytes-str"
 repository  = { workspace = true }
-version     = "0.2.0"
+version     = "0.2.1"
+
+[features]
+rkyv  = ["dep:rkyv", "rkyv/bytes-1"]
+serde = ["dep:serde"]
 
 [dependencies]
 bytes = { workspace = true }
+rkyv  = { version = "0.8", optional = true }
+serde = { version = "1", optional = true }

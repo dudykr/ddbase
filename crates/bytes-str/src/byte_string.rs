@@ -15,6 +15,15 @@ use std::{
 use bytes::{Bytes, BytesMut};
 
 /// [String] but backed by a [BytesMut]
+///
+/// # Features
+///
+/// ## `serde`
+///
+/// If the `serde` feature is enabled, the [BytesString] type will be
+/// [serde::Serialize] and [serde::Deserialize].
+///
+/// The [BytesString] type will be serialized just like a [String] type.
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct BytesString {
     pub(crate) bytes: BytesMut,
@@ -706,5 +715,31 @@ impl ToSocketAddrs for BytesString {
 impl Hash for BytesString {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.as_str().hash(state);
+    }
+}
+
+#[cfg(feature = "serde")]
+mod serde_impl {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::*;
+
+    impl<'de> Deserialize<'de> for BytesString {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let s = String::deserialize(deserializer)?;
+            Ok(Self::from(s))
+        }
+    }
+
+    impl Serialize for BytesString {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            serializer.serialize_str(self.as_str())
+        }
     }
 }

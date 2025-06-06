@@ -14,8 +14,30 @@ use bytes::Bytes;
 
 use crate::BytesString;
 
-/// [str], but backed by [Bytes].
+/// A reference-counted `str` backed by [Bytes].
+///
+/// Clone is cheap thanks to [Bytes].
+///
+///
+/// # Features
+///
+/// ## `rkyv`
+///
+/// If the `rkyv` feature is enabled, the [BytesStr] type will be
+/// [rkyv::Archive], [rkyv::Serialize], and [rkyv::Deserialize].
+///
+///
+/// ## `serde`
+///
+/// If the `serde` feature is enabled, the [BytesStr] type will be
+/// [serde::Serialize] and [serde::Deserialize].
+///
+/// The [BytesStr] type will be serialized as a [str] type.
 #[derive(Clone, Default, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)
+)]
 pub struct BytesStr {
     pub(crate) bytes: Bytes,
 }
@@ -68,6 +90,49 @@ impl BytesStr {
         Ok(Self { bytes })
     }
 
+    /// Creates a new BytesStr from a [Vec<u8>].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesStr;
+    /// use bytes::Bytes;
+    ///
+    /// let s = BytesStr::from_utf8_vec(b"hello".to_vec()).unwrap();
+    ///
+    /// assert_eq!(s.as_str(), "hello");
+    /// ```
+    pub fn from_utf8_vec(bytes: Vec<u8>) -> Result<Self, Utf8Error> {
+        std::str::from_utf8(&bytes)?;
+
+        Ok(Self {
+            bytes: Bytes::from(bytes),
+        })
+    }
+
+    /// Creates a new BytesStr from a [Bytes] without checking if the bytes
+    /// are valid UTF-8.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it does not check if the bytes are valid
+    /// UTF-8. If the bytes are not valid UTF-8, the resulting BytesStr will
+    pub unsafe fn from_utf8_unchecked(bytes: Bytes) -> Self {
+        Self { bytes }
+    }
+
+    /// Creates a new BytesStr from a [Vec<u8>] without checking if the bytes
+    /// are valid UTF-8.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it does not check if the bytes are valid
+    /// UTF-8. If the bytes are not valid UTF-8, the resulting BytesStr will
+    /// be invalid.
+    pub unsafe fn from_utf8_vec_unchecked(bytes: Vec<u8>) -> Self {
+        Self::from_utf8_unchecked(Bytes::from(bytes))
+    }
+
     /// Creates a new BytesStr from a [Bytes].
     ///
     /// # Examples
@@ -88,6 +153,20 @@ impl BytesStr {
         })
     }
 
+    /// Creates a new BytesStr from a [Bytes] without checking if the bytes
+    /// are valid UTF-8.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it does not check if the bytes are valid
+    /// UTF-8. If the bytes are not valid UTF-8, the resulting BytesStr will
+    /// be invalid.
+    pub unsafe fn from_utf8_slice_unchecked(bytes: &[u8]) -> Self {
+        Self {
+            bytes: Bytes::copy_from_slice(bytes),
+        }
+    }
+
     /// Creates a new BytesStr from a static UTF-8 slice.
     ///
     /// # Examples
@@ -105,6 +184,20 @@ impl BytesStr {
         Ok(Self {
             bytes: Bytes::from_static(bytes),
         })
+    }
+
+    /// Creates a new BytesStr from a static UTF-8 slice without checking if the
+    /// bytes are valid UTF-8.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it does not check if the bytes are valid
+    /// UTF-8. If the bytes are not valid UTF-8, the resulting BytesStr will
+    /// be invalid.
+    pub unsafe fn from_static_utf8_slice_unchecked(bytes: &'static [u8]) -> Self {
+        Self {
+            bytes: Bytes::from_static(bytes),
+        }
     }
 
     /// Returns a string slice containing the entire BytesStr.
@@ -300,5 +393,31 @@ impl TryFrom<&'static [u8]> for BytesStr {
 
     fn try_from(value: &'static [u8]) -> Result<Self, Self::Error> {
         Self::from_static_utf8_slice(value)
+    }
+}
+
+#[cfg(feature = "serde")]
+mod serde_impl {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::*;
+
+    impl<'de> Deserialize<'de> for BytesStr {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let s = String::deserialize(deserializer)?;
+            Ok(Self::from(s))
+        }
+    }
+
+    impl Serialize for BytesStr {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            serializer.serialize_str(self.as_str())
+        }
     }
 }
