@@ -58,7 +58,7 @@ impl BytesStr {
     /// use bytes_str::BytesStr;
     /// use bytes::Bytes;
     ///
-    /// let s = BytesStr::from_utf8(Bytes::from_static("hello"));
+    /// let s = BytesStr::from_utf8(Bytes::from_static(b"hello")).unwrap();
     ///
     /// assert_eq!(s.as_str(), "hello");
     /// ```
@@ -76,7 +76,7 @@ impl BytesStr {
     /// use bytes_str::BytesStr;
     /// use bytes::Bytes;
     ///     
-    /// let s = BytesStr::from_utf8_slice(b"hello");
+    /// let s = BytesStr::from_utf8_slice(b"hello").unwrap();
     ///
     /// assert_eq!(s.as_str(), "hello");
     /// ```
@@ -95,7 +95,7 @@ impl BytesStr {
     /// ```
     /// use bytes_str::BytesStr;
     ///     
-    /// let s = BytesStr::from_static_utf8_slice(b"hello");
+    /// let s = BytesStr::from_static_utf8_slice(b"hello").unwrap();
     ///
     /// assert_eq!(s.as_str(), "hello");
     /// ```
