@@ -1,5 +1,5 @@
 use std::{
-    borrow::{Borrow, BorrowMut},
+    borrow::{Borrow, BorrowMut, Cow},
     cmp::Ordering,
     ffi::OsStr,
     fmt::{self, Debug, Display},
@@ -532,5 +532,68 @@ impl PartialOrd for BytesString {
 impl Ord for BytesString {
     fn cmp(&self, other: &Self) -> Ordering {
         self.as_str().cmp(other.as_str())
+    }
+}
+
+impl<'a> Extend<&'a char> for BytesString {
+    fn extend<T: IntoIterator<Item = &'a char>>(&mut self, iter: T) {
+        self.extend(iter.into_iter().copied());
+    }
+}
+impl Extend<char> for BytesString {
+    fn extend<T: IntoIterator<Item = char>>(&mut self, iter: T) {
+        let mut buf = [0; 4];
+        for ch in iter {
+            let bytes = ch.encode_utf8(&mut buf);
+            self.bytes.extend_from_slice(bytes.as_bytes());
+        }
+    }
+}
+
+impl<'a> Extend<&'a str> for BytesString {
+    fn extend<T: IntoIterator<Item = &'a str>>(&mut self, iter: T) {
+        for s in iter {
+            self.push_str(s);
+        }
+    }
+}
+
+impl Extend<Box<str>> for BytesString {
+    fn extend<T: IntoIterator<Item = Box<str>>>(&mut self, iter: T) {
+        for s in iter {
+            self.push_str(&s);
+        }
+    }
+}
+
+impl<'a> Extend<Cow<'a, str>> for BytesString {
+    fn extend<T: IntoIterator<Item = Cow<'a, str>>>(&mut self, iter: T) {
+        for s in iter {
+            self.push_str(&s);
+        }
+    }
+}
+
+impl Extend<String> for BytesString {
+    fn extend<T: IntoIterator<Item = String>>(&mut self, iter: T) {
+        for s in iter {
+            self.push_str(&s);
+        }
+    }
+}
+
+impl<'a> Extend<&'a String> for BytesString {
+    fn extend<T: IntoIterator<Item = &'a String>>(&mut self, iter: T) {
+        for s in iter {
+            self.push_str(s);
+        }
+    }
+}
+
+impl Extend<BytesString> for BytesString {
+    fn extend<T: IntoIterator<Item = BytesString>>(&mut self, iter: T) {
+        for s in iter {
+            self.bytes.extend(s.bytes);
+        }
     }
 }
