@@ -21,24 +21,65 @@ pub struct BytesStr {
 }
 
 impl BytesStr {
+    /// Creates a new empty BytesStr.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesStr;
+    ///
+    /// let s = BytesStr::new();
+    ///
+    /// assert_eq!(s.as_str(), "");
+    /// ```
     pub fn new() -> Self {
         Self {
             bytes: Bytes::new(),
         }
     }
 
+    /// Creates a new BytesStr from a static string.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesStr;
     pub fn from_static(bytes: &'static str) -> Self {
         Self {
             bytes: Bytes::from_static(bytes.as_bytes()),
         }
     }
 
+    /// Creates a new BytesStr from a [Bytes].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesStr;
+    /// use bytes::Bytes;
+    ///
+    /// let s = BytesStr::from_utf8(Bytes::from_static("hello"));
+    ///
+    /// assert_eq!(s.as_str(), "hello");
+    /// ```
     pub fn from_utf8(bytes: Bytes) -> Result<Self, Utf8Error> {
         std::str::from_utf8(&bytes)?;
 
         Ok(Self { bytes })
     }
 
+    /// Creates a new BytesStr from a [Bytes].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesStr;
+    /// use bytes::Bytes;
+    ///     
+    /// let s = BytesStr::from_utf8_slice(b"hello");
+    ///
+    /// assert_eq!(s.as_str(), "hello");
+    /// ```
     pub fn from_utf8_slice(bytes: &[u8]) -> Result<Self, Utf8Error> {
         std::str::from_utf8(bytes)?;
 
@@ -47,6 +88,17 @@ impl BytesStr {
         })
     }
 
+    /// Creates a new BytesStr from a static UTF-8 slice.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesStr;
+    ///     
+    /// let s = BytesStr::from_static_utf8_slice(b"hello");
+    ///
+    /// assert_eq!(s.as_str(), "hello");
+    /// ```
     pub fn from_static_utf8_slice(bytes: &'static [u8]) -> Result<Self, Utf8Error> {
         std::str::from_utf8(bytes)?;
 
