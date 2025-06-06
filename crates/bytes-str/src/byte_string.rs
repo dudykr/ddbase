@@ -15,6 +15,15 @@ use std::{
 use bytes::{Bytes, BytesMut};
 
 /// [String] but backed by a [BytesMut]
+///
+/// # Features
+///
+/// ## `serde`
+///
+/// If the `serde` feature is enabled, the [BytesString] type will be
+/// [serde::Serialize] and [serde::Deserialize].
+///
+/// The [BytesString] type will be serialized just like a [String] type.
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct BytesString {
     pub(crate) bytes: BytesMut,
