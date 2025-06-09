@@ -727,6 +727,18 @@ impl Hash for BytesString {
     }
 }
 
+impl fmt::Write for BytesString {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.push_str(s);
+        Ok(())
+    }
+
+    fn write_char(&mut self, c: char) -> fmt::Result {
+        self.push(c);
+        Ok(())
+    }
+}
+
 #[cfg(feature = "serde")]
 mod serde_impl {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
