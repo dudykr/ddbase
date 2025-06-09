@@ -402,6 +402,17 @@ impl From<String> for BytesString {
     }
 }
 
+impl From<BytesString> for String {
+    fn from(s: BytesString) -> Self {
+        let vec: Vec<_> = s.bytes.freeze().into();
+
+        unsafe {
+            // SAFETY: We know the bytes are valid UTF-8 because we created them
+            String::from_utf8_unchecked(vec)
+        }
+    }
+}
+
 impl From<&str> for BytesString {
     fn from(s: &str) -> Self {
         Self {
