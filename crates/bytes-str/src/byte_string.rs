@@ -366,6 +366,24 @@ impl BytesString {
             bytes: BytesMut::from(bytes),
         })
     }
+
+    /// Converts a [BytesString] into a [String].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesString;
+    /// ```
+    /// use bytes_str::BytesString;
+    ///
+    /// let s = BytesString::from("hello");
+    ///
+    /// let string = s.into_string();
+    ///
+    /// assert_eq!(string, "hello");
+    pub fn into_string(self) -> String {
+        self.into()
+    }
 }
 
 impl Deref for BytesString {
@@ -398,6 +416,17 @@ impl From<String> for BytesString {
     fn from(s: String) -> Self {
         Self {
             bytes: Bytes::from(s.into_bytes()).into(),
+        }
+    }
+}
+
+impl From<BytesString> for String {
+    fn from(s: BytesString) -> Self {
+        let vec: Vec<_> = s.bytes.freeze().into();
+
+        unsafe {
+            // SAFETY: We know the bytes are valid UTF-8 because we created them
+            String::from_utf8_unchecked(vec)
         }
     }
 }
@@ -724,6 +753,18 @@ impl ToSocketAddrs for BytesString {
 impl Hash for BytesString {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.as_str().hash(state);
+    }
+}
+
+impl fmt::Write for BytesString {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.push_str(s);
+        Ok(())
+    }
+
+    fn write_char(&mut self, c: char) -> fmt::Result {
+        self.push(c);
+        Ok(())
     }
 }
 
