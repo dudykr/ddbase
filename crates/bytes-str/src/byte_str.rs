@@ -114,6 +114,19 @@ impl BytesStr {
         })
     }
 
+    /// Creates a new BytesStr from an owner.
+    ///
+    ///
+    /// See [Bytes::from_owner] for more information.
+    pub fn from_owner<T>(owner: T) -> Self
+    where
+        T: AsRef<[u8]> + Send + 'static,
+    {
+        Self {
+            bytes: Bytes::from_owner(owner),
+        }
+    }
+
     /// Creates a new BytesStr from a [Bytes] without checking if the bytes
     /// are valid UTF-8.
     ///
