@@ -100,7 +100,7 @@ checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
 
 [[package]]
 name = "bytes-str"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "bytes",
  "rkyv",
