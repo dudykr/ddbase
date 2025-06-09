@@ -66,6 +66,10 @@ impl BytesStr {
     ///
     /// ```
     /// use bytes_str::BytesStr;
+    ///
+    /// let s = BytesStr::from_static("hello");
+    /// assert_eq!(s.as_str(), "hello");
+    /// ```
     pub fn from_static(bytes: &'static str) -> Self {
         Self {
             bytes: Bytes::from_static(bytes.as_bytes()),
@@ -353,7 +357,7 @@ impl PartialEq<BytesStr> for &'_ str {
 
 impl PartialEq<BytesStr> for Bytes {
     fn eq(&self, other: &BytesStr) -> bool {
-        self == other.as_bytes()
+        *self == other.bytes
     }
 }
 
@@ -419,5 +423,530 @@ mod serde_impl {
         {
             serializer.serialize_str(self.as_str())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        borrow::{Borrow, Cow},
+        collections::{hash_map::DefaultHasher, HashMap},
+        ffi::OsStr,
+        hash::{Hash, Hasher},
+        path::Path,
+    };
+
+    use bytes::Bytes;
+
+    use super::*;
+    use crate::BytesString;
+
+    #[test]
+    fn test_new() {
+        let s = BytesStr::new();
+        assert_eq!(s.as_str(), "");
+        assert_eq!(s.len(), 0);
+        assert!(s.is_empty());
+    }
+
+    #[test]
+    fn test_default() {
+        let s: BytesStr = Default::default();
+        assert_eq!(s.as_str(), "");
+        assert_eq!(s.len(), 0);
+        assert!(s.is_empty());
+    }
+
+    #[test]
+    fn test_from_static() {
+        let s = BytesStr::from_static("hello world");
+        assert_eq!(s.as_str(), "hello world");
+        assert_eq!(s.len(), 11);
+        assert!(!s.is_empty());
+
+        // Test with unicode
+        let s = BytesStr::from_static("한국어 🌍");
+        assert_eq!(s.as_str(), "한국어 🌍");
+    }
+
+    #[test]
+    fn test_from_utf8() {
+        let bytes = Bytes::from_static(b"hello");
+        let s = BytesStr::from_utf8(bytes).unwrap();
+        assert_eq!(s.as_str(), "hello");
+
+        // Test with unicode
+        let bytes = Bytes::from("한국어".as_bytes());
+        let s = BytesStr::from_utf8(bytes).unwrap();
+        assert_eq!(s.as_str(), "한국어");
+
+        // Test with invalid UTF-8
+        let invalid_bytes = Bytes::from_static(&[0xff, 0xfe]);
+        assert!(BytesStr::from_utf8(invalid_bytes).is_err());
+    }
+
+    #[test]
+    fn test_from_utf8_vec() {
+        let vec = b"hello world".to_vec();
+        let s = BytesStr::from_utf8_vec(vec).unwrap();
+        assert_eq!(s.as_str(), "hello world");
+
+        // Test with unicode
+        let vec = "한국어 🎉".as_bytes().to_vec();
+        let s = BytesStr::from_utf8_vec(vec).unwrap();
+        assert_eq!(s.as_str(), "한국어 🎉");
+
+        // Test with invalid UTF-8
+        let invalid_vec = vec![0xff, 0xfe];
+        assert!(BytesStr::from_utf8_vec(invalid_vec).is_err());
+    }
+
+    #[test]
+    fn test_from_utf8_unchecked() {
+        let bytes = Bytes::from_static(b"hello");
+        let s = unsafe { BytesStr::from_utf8_unchecked(bytes) };
+        assert_eq!(s.as_str(), "hello");
+
+        // Test with unicode
+        let bytes = Bytes::from("한국어".as_bytes());
+        let s = unsafe { BytesStr::from_utf8_unchecked(bytes) };
+        assert_eq!(s.as_str(), "한국어");
+    }
+
+    #[test]
+    fn test_from_utf8_vec_unchecked() {
+        let vec = b"hello world".to_vec();
+        let s = unsafe { BytesStr::from_utf8_vec_unchecked(vec) };
+        assert_eq!(s.as_str(), "hello world");
+
+        // Test with unicode
+        let vec = "한국어 🎉".as_bytes().to_vec();
+        let s = unsafe { BytesStr::from_utf8_vec_unchecked(vec) };
+        assert_eq!(s.as_str(), "한국어 🎉");
+    }
+
+    #[test]
+    fn test_from_utf8_slice() {
+        let s = BytesStr::from_utf8_slice(b"hello").unwrap();
+        assert_eq!(s.as_str(), "hello");
+
+        // Test with unicode
+        let s = BytesStr::from_utf8_slice("한국어".as_bytes()).unwrap();
+        assert_eq!(s.as_str(), "한국어");
+
+        // Test with invalid UTF-8
+        assert!(BytesStr::from_utf8_slice(&[0xff, 0xfe]).is_err());
+    }
+
+    #[test]
+    fn test_from_utf8_slice_unchecked() {
+        let s = unsafe { BytesStr::from_utf8_slice_unchecked(b"hello") };
+        assert_eq!(s.as_str(), "hello");
+
+        // Test with unicode
+        let s = unsafe { BytesStr::from_utf8_slice_unchecked("한국어".as_bytes()) };
+        assert_eq!(s.as_str(), "한국어");
+    }
+
+    #[test]
+    fn test_from_static_utf8_slice() {
+        let s = BytesStr::from_static_utf8_slice(b"hello").unwrap();
+        assert_eq!(s.as_str(), "hello");
+
+        // Test with unicode
+        let s = BytesStr::from_static_utf8_slice("한국어".as_bytes()).unwrap();
+        assert_eq!(s.as_str(), "한국어");
+
+        // Test with invalid UTF-8
+        assert!(BytesStr::from_static_utf8_slice(&[0xff, 0xfe]).is_err());
+    }
+
+    #[test]
+    fn test_from_static_utf8_slice_unchecked() {
+        let s = unsafe { BytesStr::from_static_utf8_slice_unchecked(b"hello") };
+        assert_eq!(s.as_str(), "hello");
+
+        // Test with unicode
+        let s = unsafe { BytesStr::from_static_utf8_slice_unchecked("한국어".as_bytes()) };
+        assert_eq!(s.as_str(), "한국어");
+    }
+
+    #[test]
+    fn test_as_str() {
+        let s = BytesStr::from_static("hello world");
+        assert_eq!(s.as_str(), "hello world");
+
+        // Test with unicode
+        let s = BytesStr::from_static("한국어 🌍");
+        assert_eq!(s.as_str(), "한국어 🌍");
+    }
+
+    #[test]
+    fn test_deref() {
+        let s = BytesStr::from_static("hello world");
+
+        // Test that we can call str methods directly
+        assert_eq!(s.len(), 11);
+        assert!(s.contains("world"));
+        assert!(s.starts_with("hello"));
+        assert!(s.ends_with("world"));
+        assert_eq!(&s[0..5], "hello");
+    }
+
+    #[test]
+    fn test_as_ref_str() {
+        let s = BytesStr::from_static("hello");
+        let str_ref: &str = s.as_ref();
+        assert_eq!(str_ref, "hello");
+    }
+
+    #[test]
+    fn test_as_ref_bytes() {
+        let s = BytesStr::from_static("hello");
+        let bytes_ref: &[u8] = s.as_ref();
+        assert_eq!(bytes_ref, b"hello");
+    }
+
+    #[test]
+    fn test_as_ref_bytes_type() {
+        let s = BytesStr::from_static("hello");
+        let bytes_ref: &Bytes = s.as_ref();
+        assert_eq!(bytes_ref.as_ref(), b"hello");
+    }
+
+    #[test]
+    fn test_as_ref_os_str() {
+        let s = BytesStr::from_static("hello/world");
+        let os_str_ref: &OsStr = s.as_ref();
+        assert_eq!(os_str_ref, OsStr::new("hello/world"));
+    }
+
+    #[test]
+    fn test_as_ref_path() {
+        let s = BytesStr::from_static("hello/world");
+        let path_ref: &Path = s.as_ref();
+        assert_eq!(path_ref, Path::new("hello/world"));
+    }
+
+    #[test]
+    fn test_borrow() {
+        let s = BytesStr::from_static("hello");
+        let borrowed: &str = s.borrow();
+        assert_eq!(borrowed, "hello");
+    }
+
+    #[test]
+    fn test_from_string() {
+        let original = String::from("hello world");
+        let s = BytesStr::from(original);
+        assert_eq!(s.as_str(), "hello world");
+    }
+
+    #[test]
+    fn test_from_static_str() {
+        let s = BytesStr::from("hello world");
+        assert_eq!(s.as_str(), "hello world");
+    }
+
+    #[test]
+    fn test_conversion_to_bytes_string() {
+        let s = BytesStr::from_static("hello");
+        let bytes_string: BytesString = s.into();
+        assert_eq!(bytes_string.as_str(), "hello");
+    }
+
+    #[test]
+    fn test_conversion_from_bytes_string() {
+        let mut bytes_string = BytesString::from("hello");
+        bytes_string.push_str(" world");
+        let s: BytesStr = bytes_string.into();
+        assert_eq!(s.as_str(), "hello world");
+    }
+
+    #[test]
+    fn test_try_from_static_slice() {
+        let s = BytesStr::try_from(b"hello" as &'static [u8]).unwrap();
+        assert_eq!(s.as_str(), "hello");
+
+        // Test with invalid UTF-8
+        let invalid_slice: &'static [u8] = &[0xff, 0xfe];
+        assert!(BytesStr::try_from(invalid_slice).is_err());
+    }
+
+    #[test]
+    fn test_debug() {
+        let s = BytesStr::from_static("hello");
+        assert_eq!(format!("{:?}", s), "\"hello\"");
+
+        let s = BytesStr::from_static("hello\nworld");
+        assert_eq!(format!("{:?}", s), "\"hello\\nworld\"");
+    }
+
+    #[test]
+    fn test_display() {
+        let s = BytesStr::from_static("hello world");
+        assert_eq!(format!("{}", s), "hello world");
+
+        let s = BytesStr::from_static("한국어 🌍");
+        assert_eq!(format!("{}", s), "한국어 🌍");
+    }
+
+    #[test]
+    fn test_index() {
+        let s = BytesStr::from_static("hello world");
+        assert_eq!(&s[0..5], "hello");
+        assert_eq!(&s[6..], "world");
+        assert_eq!(&s[..5], "hello");
+        assert_eq!(&s[6..11], "world");
+
+        // Test with unicode
+        let s = BytesStr::from_static("한국어");
+        assert_eq!(&s[0..6], "한국");
+    }
+
+    #[test]
+    fn test_partial_eq_str() {
+        let s = BytesStr::from_static("hello");
+
+        // Test BytesStr == str
+        assert_eq!(s, "hello");
+        assert_ne!(s, "world");
+
+        // Test str == BytesStr
+        assert_eq!("hello", s);
+        assert_ne!("world", s);
+
+        // Test BytesStr == &str
+        let hello_str = "hello";
+        let world_str = "world";
+        assert_eq!(s, hello_str);
+        assert_ne!(s, world_str);
+
+        // Test &str == BytesStr
+        assert_eq!(hello_str, s);
+        assert_ne!(world_str, s);
+    }
+
+    #[test]
+    fn test_partial_eq_string() {
+        let s = BytesStr::from_static("hello");
+        let string = String::from("hello");
+        let other_string = String::from("world");
+
+        // Test BytesStr == String
+        assert_eq!(s, string);
+        assert_ne!(s, other_string);
+
+        // Test String == BytesStr
+        assert_eq!(string, s);
+        assert_ne!(other_string, s);
+    }
+
+    #[test]
+    fn test_partial_eq_cow() {
+        let s = BytesStr::from_static("hello");
+
+        assert_eq!(s, Cow::Borrowed("hello"));
+        assert_eq!(s, Cow::Owned(String::from("hello")));
+        assert_ne!(s, Cow::Borrowed("world"));
+        assert_ne!(s, Cow::Owned(String::from("world")));
+    }
+
+    #[test]
+    fn test_partial_eq_bytes() {
+        let s = BytesStr::from_static("hello");
+        let bytes = Bytes::from_static(b"hello");
+        let other_bytes = Bytes::from_static(b"world");
+
+        assert_eq!(bytes, s);
+        assert_ne!(other_bytes, s);
+    }
+
+    #[test]
+    fn test_partial_eq_bytes_str() {
+        let s1 = BytesStr::from_static("hello");
+        let s2 = BytesStr::from_static("hello");
+        let s3 = BytesStr::from_static("world");
+
+        assert_eq!(s1, s2);
+        assert_ne!(s1, s3);
+    }
+
+    #[test]
+    fn test_ordering() {
+        let s1 = BytesStr::from_static("apple");
+        let s2 = BytesStr::from_static("banana");
+        let s3 = BytesStr::from_static("apple");
+
+        assert!(s1 < s2);
+        assert!(s2 > s1);
+        assert_eq!(s1, s3);
+        assert!(s1 <= s3);
+        assert!(s1 >= s3);
+
+        // Test partial_cmp
+        assert_eq!(s1.partial_cmp(&s2), Some(std::cmp::Ordering::Less));
+        assert_eq!(s2.partial_cmp(&s1), Some(std::cmp::Ordering::Greater));
+        assert_eq!(s1.partial_cmp(&s3), Some(std::cmp::Ordering::Equal));
+    }
+
+    #[test]
+    fn test_hash() {
+        let s1 = BytesStr::from_static("hello");
+        let s2 = BytesStr::from_static("hello");
+        let s3 = BytesStr::from_static("world");
+
+        let mut hasher1 = DefaultHasher::new();
+        let mut hasher2 = DefaultHasher::new();
+        let mut hasher3 = DefaultHasher::new();
+
+        s1.hash(&mut hasher1);
+        s2.hash(&mut hasher2);
+        s3.hash(&mut hasher3);
+
+        assert_eq!(hasher1.finish(), hasher2.finish());
+        assert_ne!(hasher1.finish(), hasher3.finish());
+
+        // Test hash consistency with str
+        let mut str_hasher = DefaultHasher::new();
+        "hello".hash(&mut str_hasher);
+        assert_eq!(hasher1.finish(), str_hasher.finish());
+    }
+
+    #[test]
+    fn test_clone() {
+        let s1 = BytesStr::from_static("hello world");
+        let s2 = s1.clone();
+
+        assert_eq!(s1, s2);
+        assert_eq!(s1.as_str(), s2.as_str());
+
+        // Clone should be cheap (reference counting)
+        // Both should point to the same underlying data
+    }
+
+    #[test]
+    fn test_extend_bytes_string() {
+        let mut bytes_string = BytesString::from("hello");
+        let parts = vec![
+            BytesStr::from_static(" "),
+            BytesStr::from_static("world"),
+            BytesStr::from_static("!"),
+        ];
+
+        bytes_string.extend(parts);
+        assert_eq!(bytes_string.as_str(), "hello world!");
+    }
+
+    #[test]
+    fn test_unicode_handling() {
+        let s = BytesStr::from_static("Hello 🌍 한국어 🎉");
+        assert_eq!(s.as_str(), "Hello 🌍 한국어 🎉");
+        assert!(s.len() > 13); // More than ASCII length due to UTF-8 encoding
+
+        // Test indexing with unicode (be careful with boundaries)
+        let korean = BytesStr::from_static("한국어");
+        assert_eq!(korean.len(), 9); // 3 characters * 3 bytes each
+        assert_eq!(&korean[0..6], "한국"); // First two characters
+    }
+
+    #[test]
+    fn test_empty_strings() {
+        let s = BytesStr::new();
+        assert!(s.is_empty());
+        assert_eq!(s.len(), 0);
+        assert_eq!(s.as_str(), "");
+
+        let s = BytesStr::from_static("");
+        assert!(s.is_empty());
+        assert_eq!(s.len(), 0);
+        assert_eq!(s.as_str(), "");
+    }
+
+    #[test]
+    fn test_large_strings() {
+        let large_str = "a".repeat(10000);
+        let s = BytesStr::from(large_str.clone());
+        assert_eq!(s.len(), 10000);
+        assert_eq!(s.as_str(), large_str);
+    }
+
+    #[test]
+    fn test_hash_map_usage() {
+        let mut map = HashMap::new();
+        let key = BytesStr::from_static("key");
+        map.insert(key, "value");
+
+        let lookup_key = BytesStr::from_static("key");
+        assert_eq!(map.get(&lookup_key), Some(&"value"));
+
+        // Test that string can be used to lookup BytesStr key
+        assert_eq!(map.get("key"), Some(&"value"));
+    }
+
+    #[test]
+    fn test_memory_efficiency() {
+        // Test that cloning is cheap (reference counting)
+        let original = BytesStr::from(String::from("hello world"));
+        let clone1 = original.clone();
+        let clone2 = original.clone();
+
+        // All should have the same content
+        assert_eq!(original.as_str(), "hello world");
+        assert_eq!(clone1.as_str(), "hello world");
+        assert_eq!(clone2.as_str(), "hello world");
+
+        // They should be equal
+        assert_eq!(original, clone1);
+        assert_eq!(clone1, clone2);
+    }
+
+    #[test]
+    fn test_static_vs_owned() {
+        // Test static string
+        let static_str = BytesStr::from_static("hello");
+        assert_eq!(static_str.as_str(), "hello");
+
+        // Test owned string
+        let owned_str = BytesStr::from(String::from("hello"));
+        assert_eq!(owned_str.as_str(), "hello");
+
+        // They should be equal even if one is static and one is owned
+        assert_eq!(static_str, owned_str);
+    }
+
+    #[test]
+    fn test_error_cases() {
+        // Test various invalid UTF-8 sequences
+        let invalid_sequences = vec![
+            vec![0xff],             // Invalid start byte
+            vec![0xfe, 0xff],       // Invalid sequence
+            vec![0xc0, 0x80],       // Overlong encoding
+            vec![0xe0, 0x80, 0x80], // Overlong encoding
+        ];
+
+        for invalid in invalid_sequences {
+            assert!(BytesStr::from_utf8(Bytes::from(invalid.clone())).is_err());
+            assert!(BytesStr::from_utf8_vec(invalid.clone()).is_err());
+            assert!(BytesStr::from_utf8_slice(&invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn test_boundary_conditions() {
+        // Test with single character
+        let s = BytesStr::from_static("a");
+        assert_eq!(s.len(), 1);
+        assert_eq!(s.as_str(), "a");
+
+        // Test with single unicode character
+        let s = BytesStr::from_static("한");
+        assert_eq!(s.len(), 3); // UTF-8 encoding
+        assert_eq!(s.as_str(), "한");
+
+        // Test with emoji
+        let s = BytesStr::from_static("🌍");
+        assert_eq!(s.len(), 4); // UTF-8 encoding
+        assert_eq!(s.as_str(), "🌍");
     }
 }

@@ -144,7 +144,7 @@ impl BytesString {
         }
     }
 
-    /// Returns a byte slice of this String’s contents.
+    /// Returns a byte slice of this String's contents.
     ///
     /// # Examples
     ///
@@ -176,7 +176,7 @@ impl BytesString {
 
     /// Truncates the BytesString to the specified length.
     ///
-    /// If new_len is greater than or equal to the string’s current length, this
+    /// If new_len is greater than or equal to the string's current length, this
     /// has no effect.
     ///
     /// Note that this method has no effect on the allocated capacity of the
@@ -567,6 +567,7 @@ impl<'a> Extend<&'a char> for BytesString {
         self.extend(iter.into_iter().copied());
     }
 }
+
 impl Extend<char> for BytesString {
     fn extend<T: IntoIterator<Item = char>>(&mut self, iter: T) {
         let mut buf = [0; 4];
@@ -579,6 +580,14 @@ impl Extend<char> for BytesString {
 
 impl<'a> Extend<&'a str> for BytesString {
     fn extend<T: IntoIterator<Item = &'a str>>(&mut self, iter: T) {
+        for s in iter {
+            self.push_str(s);
+        }
+    }
+}
+
+impl<'a, 'b> Extend<&'a &'b str> for BytesString {
+    fn extend<T: IntoIterator<Item = &'a &'b str>>(&mut self, iter: T) {
         for s in iter {
             self.push_str(s);
         }
@@ -741,5 +750,499 @@ mod serde_impl {
         {
             serializer.serialize_str(self.as_str())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::{hash_map::DefaultHasher, HashMap},
+        hash::{Hash, Hasher},
+    };
+
+    use super::*;
+
+    #[test]
+    fn test_new() {
+        let s = BytesString::new();
+        assert!(s.is_empty());
+        assert_eq!(s.len(), 0);
+        assert_eq!(s.as_str(), "");
+    }
+
+    #[test]
+    fn test_with_capacity() {
+        let s = BytesString::with_capacity(10);
+        assert!(s.capacity() >= 10);
+        assert!(s.is_empty());
+        assert_eq!(s.len(), 0);
+    }
+
+    #[test]
+    fn test_from_str() {
+        let s = BytesString::from("hello");
+        assert_eq!(s.as_str(), "hello");
+        assert_eq!(s.len(), 5);
+        assert!(!s.is_empty());
+    }
+
+    #[test]
+    fn test_from_string() {
+        let original = String::from("hello world");
+        let s = BytesString::from(original);
+        assert_eq!(s.as_str(), "hello world");
+        assert_eq!(s.len(), 11);
+    }
+
+    #[test]
+    fn test_from_char() {
+        let s = BytesString::from('H');
+        assert_eq!(s.as_str(), "H");
+        assert_eq!(s.len(), 1);
+
+        // Test unicode character
+        let s = BytesString::from('한');
+        assert_eq!(s.as_str(), "한");
+        assert_eq!(s.len(), 3); // UTF-8 encoding
+    }
+
+    #[test]
+    fn test_push() {
+        let mut s = BytesString::from("hello");
+        s.push(' ');
+        s.push('w');
+        assert_eq!(s.as_str(), "hello w");
+
+        // Test unicode
+        s.push('한');
+        assert_eq!(s.as_str(), "hello w한");
+    }
+
+    #[test]
+    fn test_push_str() {
+        let mut s = BytesString::from("hello");
+        s.push_str(" world");
+        assert_eq!(s.as_str(), "hello world");
+
+        s.push_str("!");
+        assert_eq!(s.as_str(), "hello world!");
+
+        // Test unicode
+        s.push_str(" 한국어");
+        assert_eq!(s.as_str(), "hello world! 한국어");
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut s = BytesString::from("hello");
+        assert!(!s.is_empty());
+        s.clear();
+        assert!(s.is_empty());
+        assert_eq!(s.len(), 0);
+        assert_eq!(s.as_str(), "");
+    }
+
+    #[test]
+    fn test_truncate() {
+        let mut s = BytesString::from("hello world");
+        s.truncate(5);
+        assert_eq!(s.as_str(), "hello");
+
+        // Test truncating to larger than current length
+        s.truncate(20);
+        assert_eq!(s.as_str(), "hello");
+
+        // Test unicode boundaries
+        let mut s = BytesString::from("한국어");
+        s.truncate(6); // Should truncate to "한국"
+        assert_eq!(s.as_str(), "한국");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_truncate_panic_on_char_boundary() {
+        let mut s = BytesString::from("한국어");
+        s.truncate(1); // Should panic as it's not on a char boundary
+    }
+
+    #[test]
+    fn test_split_off() {
+        let mut s = BytesString::from("hello world");
+        let other = s.split_off(6);
+        assert_eq!(s.as_str(), "hello ");
+        assert_eq!(other.as_str(), "world");
+
+        // Test at beginning
+        let mut s = BytesString::from("hello");
+        let other = s.split_off(0);
+        assert_eq!(s.as_str(), "");
+        assert_eq!(other.as_str(), "hello");
+
+        // Test at end
+        let mut s = BytesString::from("hello");
+        let other = s.split_off(5);
+        assert_eq!(s.as_str(), "hello");
+        assert_eq!(other.as_str(), "");
+    }
+
+    #[test]
+    fn test_as_bytes() {
+        let s = BytesString::from("hello");
+        assert_eq!(s.as_bytes(), b"hello");
+
+        let s = BytesString::from("한국어");
+        assert_eq!(s.as_bytes(), "한국어".as_bytes());
+    }
+
+    #[test]
+    fn test_as_mut_str() {
+        let mut s = BytesString::from("hello");
+        s.as_mut_str().make_ascii_uppercase();
+        assert_eq!(s.as_str(), "HELLO");
+    }
+
+    #[test]
+    fn test_into_bytes() {
+        let s = BytesString::from("hello");
+        let bytes = s.into_bytes();
+        assert_eq!(bytes.as_ref(), b"hello");
+    }
+
+    #[test]
+    fn test_from_utf8() {
+        let bytes = BytesMut::from(&b"hello"[..]);
+        let s = BytesString::from_utf8(bytes).unwrap();
+        assert_eq!(s.as_str(), "hello");
+
+        // Test invalid UTF-8
+        let invalid_bytes = BytesMut::from(&[0xff, 0xfe][..]);
+        assert!(BytesString::from_utf8(invalid_bytes).is_err());
+    }
+
+    #[test]
+    fn test_from_utf8_slice() {
+        let s = BytesString::from_utf8_slice(b"hello").unwrap();
+        assert_eq!(s.as_str(), "hello");
+
+        // Test invalid UTF-8
+        assert!(BytesString::from_utf8_slice(&[0xff, 0xfe]).is_err());
+    }
+
+    #[test]
+    fn test_from_bytes_unchecked() {
+        let bytes = BytesMut::from(&b"hello"[..]);
+        let s = unsafe { BytesString::from_bytes_unchecked(bytes) };
+        assert_eq!(s.as_str(), "hello");
+    }
+
+    #[test]
+    fn test_reserve() {
+        let mut s = BytesString::from("hello");
+        let initial_capacity = s.capacity();
+        s.reserve(100);
+        assert!(s.capacity() >= initial_capacity + 100);
+        assert_eq!(s.as_str(), "hello"); // Content unchanged
+    }
+
+    #[test]
+    fn test_deref() {
+        let s = BytesString::from("hello world");
+        assert_eq!(s.len(), 11);
+        assert!(s.contains("world"));
+        assert!(s.starts_with("hello"));
+        assert!(s.ends_with("world"));
+    }
+
+    #[test]
+    fn test_partial_eq() {
+        let s = BytesString::from("hello");
+
+        // Test with &str
+        assert_eq!(s, "hello");
+        assert_ne!(s, "world");
+
+        // Test with String
+        assert_eq!(s, String::from("hello"));
+        assert_ne!(s, String::from("world"));
+
+        // Test with Cow
+        assert_eq!(s, Cow::Borrowed("hello"));
+        assert_eq!(s, Cow::Owned(String::from("hello")));
+
+        // Test with Bytes
+        assert_eq!(Bytes::from("hello"), s);
+        assert_ne!(Bytes::from("world"), s);
+
+        // Test symmetry
+        assert_eq!("hello", s);
+        assert_eq!(String::from("hello"), s);
+    }
+
+    #[test]
+    fn test_ordering() {
+        let s1 = BytesString::from("apple");
+        let s2 = BytesString::from("banana");
+        let s3 = BytesString::from("apple");
+
+        assert!(s1 < s2);
+        assert!(s2 > s1);
+        assert_eq!(s1, s3);
+        assert!(s1 <= s3);
+        assert!(s1 >= s3);
+    }
+
+    #[test]
+    fn test_hash() {
+        let s1 = BytesString::from("hello");
+        let s2 = BytesString::from("hello");
+        let s3 = BytesString::from("world");
+
+        let mut hasher1 = DefaultHasher::new();
+        let mut hasher2 = DefaultHasher::new();
+        let mut hasher3 = DefaultHasher::new();
+
+        s1.hash(&mut hasher1);
+        s2.hash(&mut hasher2);
+        s3.hash(&mut hasher3);
+
+        assert_eq!(hasher1.finish(), hasher2.finish());
+        assert_ne!(hasher1.finish(), hasher3.finish());
+
+        // Test hash consistency with str
+        let mut str_hasher = DefaultHasher::new();
+        "hello".hash(&mut str_hasher);
+        assert_eq!(hasher1.finish(), str_hasher.finish());
+    }
+
+    #[test]
+    fn test_add() {
+        let s1 = BytesString::from("hello");
+        let s2 = s1 + " world";
+        assert_eq!(s2.as_str(), "hello world");
+
+        let s3 = BytesString::from("foo");
+        let s4 = BytesString::from("bar");
+        let s5 = s3 + s4;
+        assert_eq!(s5.as_str(), "foobar");
+    }
+
+    #[test]
+    fn test_add_assign() {
+        let mut s = BytesString::from("hello");
+        s += " world";
+        assert_eq!(s.as_str(), "hello world");
+
+        let mut s1 = BytesString::from("foo");
+        let s2 = BytesString::from("bar");
+        s1 += s2;
+        assert_eq!(s1.as_str(), "foobar");
+    }
+
+    #[test]
+    fn test_extend_char() {
+        let mut s = BytesString::from("hello");
+        s.extend(['!', ' ', '🎉'].iter());
+        assert_eq!(s.as_str(), "hello! 🎉");
+
+        let mut s = BytesString::new();
+        s.extend(['a', 'b', 'c']);
+        assert_eq!(s.as_str(), "abc");
+    }
+
+    #[test]
+    fn test_extend_str() {
+        let mut s = BytesString::from("hello");
+        s.extend([" ", "world", "!"].iter());
+        assert_eq!(s.as_str(), "hello world!");
+
+        let strings = vec![String::from("foo"), String::from("bar")];
+        let mut s = BytesString::new();
+        s.extend(&strings);
+        assert_eq!(s.as_str(), "foobar");
+    }
+
+    #[test]
+    fn test_extend_bytes_string() {
+        let mut s = BytesString::from("hello");
+        let parts = vec![BytesString::from(" "), BytesString::from("world")];
+        s.extend(parts);
+        assert_eq!(s.as_str(), "hello world");
+    }
+
+    #[test]
+    fn test_from_iterator() {
+        let s: BytesString = ['h', 'e', 'l', 'l', 'o'].into_iter().collect();
+        assert_eq!(s.as_str(), "hello");
+
+        let s: BytesString = ["hello", " ", "world"].into_iter().collect();
+        assert_eq!(s.as_str(), "hello world");
+
+        let strings = vec![String::from("foo"), String::from("bar")];
+        let s: BytesString = strings.into_iter().collect();
+        assert_eq!(s.as_str(), "foobar");
+    }
+
+    #[test]
+    fn test_from_str_trait() {
+        let s: BytesString = "hello world".parse().unwrap();
+        assert_eq!(s.as_str(), "hello world");
+    }
+
+    #[test]
+    fn test_index() {
+        let s = BytesString::from("hello world");
+        assert_eq!(&s[0..5], "hello");
+        assert_eq!(&s[6..], "world");
+        assert_eq!(&s[..5], "hello");
+        assert_eq!(&s[6..11], "world");
+    }
+
+    #[test]
+    fn test_index_mut() {
+        let mut s = BytesString::from("hello world");
+        s[0..5].make_ascii_uppercase();
+        assert_eq!(s.as_str(), "HELLO world");
+    }
+
+    #[test]
+    fn test_as_ref_implementations() {
+        let s = BytesString::from("hello/world");
+
+        // AsRef<str>
+        let str_ref: &str = s.as_ref();
+        assert_eq!(str_ref, "hello/world");
+
+        // AsRef<[u8]>
+        let bytes_ref: &[u8] = s.as_ref();
+        assert_eq!(bytes_ref, b"hello/world");
+
+        // AsRef<OsStr>
+        let os_str_ref: &OsStr = s.as_ref();
+        assert_eq!(os_str_ref, OsStr::new("hello/world"));
+
+        // AsRef<Path>
+        let path_ref: &Path = s.as_ref();
+        assert_eq!(path_ref, Path::new("hello/world"));
+    }
+
+    #[test]
+    fn test_borrow() {
+        let s = BytesString::from("hello");
+        let borrowed: &str = s.borrow();
+        assert_eq!(borrowed, "hello");
+
+        let mut s = BytesString::from("hello");
+        let borrowed_mut: &mut str = s.borrow_mut();
+        borrowed_mut.make_ascii_uppercase();
+        assert_eq!(s.as_str(), "HELLO");
+    }
+
+    #[test]
+    fn test_debug() {
+        let s = BytesString::from("hello");
+        assert_eq!(format!("{:?}", s), "\"hello\"");
+    }
+
+    #[test]
+    fn test_display() {
+        let s = BytesString::from("hello world");
+        assert_eq!(format!("{}", s), "hello world");
+    }
+
+    #[test]
+    fn test_conversions() {
+        let s = BytesString::from("hello");
+
+        // Into BytesMut
+        let bytes_mut: BytesMut = s.clone().into();
+        assert_eq!(bytes_mut.as_ref(), b"hello");
+
+        // Into Bytes
+        let bytes: Bytes = s.into();
+        assert_eq!(bytes.as_ref(), b"hello");
+    }
+
+    #[test]
+    fn test_to_socket_addrs() {
+        let s = BytesString::from("127.0.0.1:8080");
+        let addrs: Vec<_> = s.to_socket_addrs().unwrap().collect();
+        assert!(!addrs.is_empty());
+
+        let s = BytesString::from("localhost:8080");
+        let result = s.to_socket_addrs();
+        // This might fail depending on system configuration, so we just check it
+        // compiles
+        let _ = result;
+    }
+
+    #[test]
+    fn test_unicode_handling() {
+        let s = BytesString::from("Hello 🌍 한국어 🎉");
+        assert_eq!(s.as_str(), "Hello 🌍 한국어 🎉");
+        assert!(s.len() > 13); // More than ASCII length due to UTF-8 encoding
+
+        let mut s = BytesString::new();
+        s.push('🌍');
+        s.push_str(" 한국어");
+        assert_eq!(s.as_str(), "🌍 한국어");
+    }
+
+    #[test]
+    fn test_empty_operations() {
+        let mut s = BytesString::new();
+        assert!(s.is_empty());
+
+        s.push_str("");
+        assert!(s.is_empty());
+
+        s.clear();
+        assert!(s.is_empty());
+
+        let other = s.split_off(0);
+        assert!(s.is_empty());
+        assert!(other.is_empty());
+    }
+
+    #[test]
+    fn test_large_string() {
+        let large_str = "a".repeat(10000);
+        let s = BytesString::from(large_str.as_str());
+        assert_eq!(s.len(), 10000);
+        assert_eq!(s.as_str(), large_str);
+
+        let mut s = BytesString::with_capacity(10000);
+        for _ in 0..10000 {
+            s.push('a');
+        }
+        assert_eq!(s.len(), 10000);
+        assert_eq!(s.as_str(), large_str);
+    }
+
+    #[test]
+    fn test_clone() {
+        let s1 = BytesString::from("hello world");
+        let s2 = s1.clone();
+        assert_eq!(s1, s2);
+        assert_eq!(s1.as_str(), s2.as_str());
+    }
+
+    #[test]
+    fn test_default() {
+        let s: BytesString = Default::default();
+        assert!(s.is_empty());
+        assert_eq!(s.as_str(), "");
+    }
+
+    #[test]
+    fn test_hash_map_usage() {
+        let mut map = HashMap::new();
+        let key = BytesString::from("key");
+        map.insert(key, "value");
+
+        let lookup_key = BytesString::from("key");
+        assert_eq!(map.get(&lookup_key), Some(&"value"));
+
+        // Test that string can be used to lookup BytesString key
+        assert_eq!(map.get("key"), Some(&"value"));
     }
 }
