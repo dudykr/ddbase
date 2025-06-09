@@ -366,6 +366,24 @@ impl BytesString {
             bytes: BytesMut::from(bytes),
         })
     }
+
+    /// Converts a [BytesString] into a [String].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesString;
+    /// ```
+    /// use bytes_str::BytesString;
+    ///
+    /// let s = BytesString::from("hello");
+    ///
+    /// let string = s.into_string();
+    ///
+    /// assert_eq!(string, "hello");
+    pub fn into_string(self) -> String {
+        self.into()
+    }
 }
 
 impl Deref for BytesString {
