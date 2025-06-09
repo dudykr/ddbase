@@ -249,7 +249,7 @@ impl BytesStr {
     /// ```
     /// use bytes_str::BytesStr;
     ///     
-    /// let s = BytesStr::from_static("hello");
+    /// let mut s = BytesStr::from_static("hello");
     /// s.advance(3);
     ///
     /// assert_eq!(s.as_str(), "llo");
