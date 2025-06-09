@@ -116,9 +116,8 @@ impl BytesStr {
 
     /// Creates a new BytesStr from an owner.
     ///
-    ///
     /// See [Bytes::from_owner] for more information.
-    pub fn from_owner<T>(owner: T) -> Result<Self, Utf8Error>
+    pub fn from_owned_utf8<T>(owner: T) -> Result<Self, Utf8Error>
     where
         T: AsRef<[u8]> + Send + 'static,
     {
