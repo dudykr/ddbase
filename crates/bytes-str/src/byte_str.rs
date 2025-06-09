@@ -218,6 +218,23 @@ impl BytesStr {
     pub fn as_str(&self) -> &str {
         unsafe { std::str::from_utf8_unchecked(&self.bytes) }
     }
+
+    /// Converts the [BytesStr] into a [Bytes].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesStr;
+    /// use bytes::Bytes;
+    ///     
+    /// let s = BytesStr::from_static("hello");
+    /// let bytes = s.into_bytes();
+    ///
+    /// assert_eq!(bytes, Bytes::from_static(b"hello"));
+    /// ```
+    pub fn into_bytes(self) -> Bytes {
+        self.bytes
+    }
 }
 
 impl Deref for BytesStr {
