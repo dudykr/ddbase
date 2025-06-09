@@ -4,7 +4,7 @@ use std::{
     ffi::OsStr,
     fmt::{self, Debug, Display},
     hash::{Hash, Hasher},
-    ops::{Deref, Index},
+    ops::{Deref, Index, RangeBounds},
     path::Path,
     slice::SliceIndex,
     str::Utf8Error,
@@ -111,6 +111,20 @@ impl BytesStr {
 
         Ok(Self {
             bytes: Bytes::from(bytes),
+        })
+    }
+
+    /// Creates a new BytesStr from an owner.
+    ///
+    /// See [Bytes::from_owner] for more information.
+    pub fn from_owned_utf8<T>(owner: T) -> Result<Self, Utf8Error>
+    where
+        T: AsRef<[u8]> + Send + 'static,
+    {
+        std::str::from_utf8(owner.as_ref())?;
+
+        Ok(Self {
+            bytes: Bytes::from_owner(owner),
         })
     }
 
@@ -234,6 +248,75 @@ impl BytesStr {
     /// ```
     pub fn into_bytes(self) -> Bytes {
         self.bytes
+    }
+
+    /// Returns the length of the [BytesStr].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesStr;
+    ///
+    /// let s = BytesStr::from_static("hello");
+    ///
+    /// assert_eq!(s.len(), 5);
+    /// ```
+    pub const fn len(&self) -> usize {
+        self.bytes.len()
+    }
+
+    /// Returns true if the [BytesStr] is empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesStr;
+    ///     
+    /// let s = BytesStr::new();
+    ///
+    /// assert!(s.is_empty());
+    /// ```
+    pub const fn is_empty(&self) -> bool {
+        self.bytes.is_empty()
+    }
+
+    /// Returns a slice of the [BytesStr].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the bounds are not character boundaries.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesStr;
+    ///     
+    /// let s = BytesStr::from_static("hello");
+    /// let slice = s.slice(1..3);
+    ///
+    /// assert_eq!(slice.as_str(), "el");
+    /// ```
+    pub fn slice(&self, range: impl RangeBounds<usize>) -> Self {
+        let s = Self {
+            bytes: self.bytes.slice(range),
+        };
+
+        if !s.is_char_boundary(0) {
+            panic!("range start is not a character boundary");
+        }
+
+        if !s.is_char_boundary(s.len()) {
+            panic!("range end is not a character boundary");
+        }
+
+        s
+    }
+
+    /// See [Bytes::slice_ref]
+    pub fn slice_ref(&self, subset: &str) -> Self {
+        Self {
+            bytes: self.bytes.slice_ref(subset.as_bytes()),
+        }
     }
 
     /// Advances the [BytesStr] by `n` bytes.
