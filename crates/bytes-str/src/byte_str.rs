@@ -10,7 +10,7 @@ use std::{
     str::Utf8Error,
 };
 
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 
 use crate::BytesString;
 
@@ -234,6 +234,34 @@ impl BytesStr {
     /// ```
     pub fn into_bytes(self) -> Bytes {
         self.bytes
+    }
+
+    /// Returns a new [BytesStr] with the first `n` bytes of the original
+    /// [BytesStr].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `n` is greater than the length of the [BytesStr].
+    ///
+    /// Panics if `n` is not a character boundary.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesStr;
+    ///     
+    /// let s = BytesStr::from_static("hello");
+    /// let s2 = s.advanced(3);
+    ///
+    /// assert_eq!(s2.as_str(), "llo");
+    /// ```
+    pub fn advanced(mut self, n: usize) -> Self {
+        if !self.is_char_boundary(n) {
+            panic!("n is not a character boundary");
+        }
+
+        self.bytes.advance(n);
+        self
     }
 }
 
