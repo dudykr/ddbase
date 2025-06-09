@@ -185,6 +185,40 @@ impl BytesStr {
         }
     }
 
+    /// Creates a new BytesStr from a [str].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesStr;
+    ///     
+    /// let s = BytesStr::from_str_slice("hello");
+    ///
+    /// assert_eq!(s.as_str(), "hello");
+    /// ```
+    pub fn from_str_slice(bytes: &str) -> Self {
+        Self {
+            bytes: Bytes::copy_from_slice(bytes.as_bytes()),
+        }
+    }
+
+    /// Creates a new BytesStr from a [String].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesStr;
+    ///         
+    /// let s = BytesStr::from_string("hello".to_string());
+    ///
+    /// assert_eq!(s.as_str(), "hello");
+    /// ```
+    pub fn from_string(bytes: String) -> Self {
+        Self {
+            bytes: Bytes::from(bytes),
+        }
+    }
+
     /// Creates a new BytesStr from a static UTF-8 slice.
     ///
     /// # Examples
