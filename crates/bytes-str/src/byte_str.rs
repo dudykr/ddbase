@@ -118,13 +118,15 @@ impl BytesStr {
     ///
     ///
     /// See [Bytes::from_owner] for more information.
-    pub fn from_owner<T>(owner: T) -> Self
+    pub fn from_owner<T>(owner: T) -> Result<Self, Utf8Error>
     where
         T: AsRef<[u8]> + Send + 'static,
     {
-        Self {
+        std::str::from_utf8(owner.as_ref())?;
+
+        Ok(Self {
             bytes: Bytes::from_owner(owner),
-        }
+        })
     }
 
     /// Creates a new BytesStr from a [Bytes] without checking if the bytes
