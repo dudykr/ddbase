@@ -236,8 +236,7 @@ impl BytesStr {
         self.bytes
     }
 
-    /// Returns a new [BytesStr] with the first `n` bytes of the original
-    /// [BytesStr].
+    /// Advances the [BytesStr] by `n` bytes.
     ///
     /// # Panics
     ///
@@ -251,17 +250,16 @@ impl BytesStr {
     /// use bytes_str::BytesStr;
     ///     
     /// let s = BytesStr::from_static("hello");
-    /// let s2 = s.advanced(3);
+    /// s.advance(3);
     ///
-    /// assert_eq!(s2.as_str(), "llo");
+    /// assert_eq!(s.as_str(), "llo");
     /// ```
-    pub fn advanced(mut self, n: usize) -> Self {
+    pub fn advance(&mut self, n: usize) {
         if !self.is_char_boundary(n) {
             panic!("n is not a character boundary");
         }
 
         self.bytes.advance(n);
-        self
     }
 }
 
