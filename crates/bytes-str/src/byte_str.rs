@@ -252,7 +252,7 @@ impl BytesStr {
     /// let mut s = BytesStr::from_static("hello");
     /// s.advance(3);
     ///
-    /// assert_eq!(s.as_str(), "llo");
+    /// assert_eq!(s.as_str(), "lo");
     /// ```
     pub fn advance(&mut self, n: usize) {
         if !self.is_char_boundary(n) {
