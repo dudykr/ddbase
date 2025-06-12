@@ -367,6 +367,22 @@ impl BytesString {
         })
     }
 
+    /// Converts the [BytesString] into a [Vec<u8>].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesString;
+    ///     
+    /// let s = BytesString::from("hello");
+    /// let vec = s.into_vec();
+    ///
+    /// assert_eq!(vec, b"hello");
+    /// ```
+    pub fn into_vec(self) -> Vec<u8> {
+        self.bytes.into()
+    }
+
     /// Converts a [BytesString] into a [String].
     ///
     /// # Examples
