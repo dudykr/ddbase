@@ -284,6 +284,41 @@ impl BytesStr {
         self.bytes
     }
 
+    /// Converts the [BytesStr] into a [Vec<u8>].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesStr;
+    ///     
+    /// let s = BytesStr::from_static("hello");
+    /// let vec = s.into_vec();
+    ///
+    /// assert_eq!(vec, b"hello");
+    /// ```
+    pub fn into_vec(self) -> Vec<u8> {
+        self.into_bytes().to_vec()
+    }
+
+    /// Converts the [BytesStr] into a [String].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use bytes_str::BytesStr;
+    ///     
+    /// let s = BytesStr::from_static("hello");
+    /// let string = s.into_string();
+    ///
+    /// assert_eq!(string, "hello");
+    /// ```
+    pub fn into_string(self) -> String {
+        unsafe {
+            // Safety: BytesStr is backed by a valid UTF-8 string.
+            String::from_utf8_unchecked(self.into_vec())
+        }
+    }
+
     /// Returns the length of the [BytesStr].
     ///
     /// # Examples
