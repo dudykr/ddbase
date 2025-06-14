@@ -66,9 +66,9 @@ mod par_chili {
     }
 
     #[derive(Default)]
-    pub struct MaybeScope<'a>(ScopeLike<'a>);
+    struct MaybeScope<'a>(ScopeLike<'a>);
 
-    pub struct Scope<'a>(&'a mut chili::Scope<'a>);
+    struct Scope<'a>(&'a mut chili::Scope<'a>);
 
     enum ScopeLike<'a> {
         Scope(Scope<'a>),
@@ -83,7 +83,7 @@ mod par_chili {
 
     impl<'a> MaybeScope<'a> {
         #[allow(clippy::redundant_closure)]
-        pub fn with<F, R>(&mut self, f: F) -> R
+        fn with<F, R>(&mut self, f: F) -> R
         where
             F: FnOnce(Scope<'a>) -> R,
         {
@@ -114,7 +114,7 @@ mod par_chili {
     }
 
     #[inline]
-    pub fn join_maybe_scoped<'a, A, B, RA, RB>(
+    fn join_maybe_scoped<'a, A, B, RA, RB>(
         scope: &mut MaybeScope<'a>,
         oper_a: A,
         oper_b: B,
@@ -129,7 +129,7 @@ mod par_chili {
     }
 
     #[inline]
-    pub fn join_scoped<'a, A, B, RA, RB>(scope: Scope<'a>, oper_a: A, oper_b: B) -> (RA, RB)
+    fn join_scoped<'a, A, B, RA, RB>(scope: Scope<'a>, oper_a: A, oper_b: B) -> (RA, RB)
     where
         A: Send + FnOnce(Scope<'a>) -> RA,
         B: Send + FnOnce(Scope<'a>) -> RB,
