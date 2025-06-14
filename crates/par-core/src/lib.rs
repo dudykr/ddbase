@@ -61,88 +61,42 @@ compile_error!("You must enable `chili` or `rayon` feature, not both");
 mod par_chili {
     use std::{cell::RefCell, mem::transmute};
 
+    use chili::Scope;
+
     thread_local! {
-        static SCOPE: RefCell<Option<MaybeScope<'static>>> = Default::default();
-    }
-
-    #[derive(Default)]
-    struct MaybeScope<'a>(ScopeLike<'a>);
-
-    struct Scope<'a>(&'a mut chili::Scope<'a>);
-
-    enum ScopeLike<'a> {
-        Scope(Scope<'a>),
-        Global(Option<chili::Scope<'a>>),
-    }
-
-    impl Default for ScopeLike<'_> {
-        fn default() -> Self {
-            ScopeLike::Global(None)
-        }
-    }
-
-    impl<'a> MaybeScope<'a> {
-        #[allow(clippy::redundant_closure)]
-        fn with<F, R>(&mut self, f: F) -> R
-        where
-            F: FnOnce(Scope<'a>) -> R,
-        {
-            let scope: &mut chili::Scope = match &mut self.0 {
-                ScopeLike::Scope(scope) => unsafe {
-                    // Safety: chili Scope will be alive until the end of the function, because it's
-                    // contract of 'a lifetime in the type.
-
-                    transmute::<&mut chili::Scope, &mut chili::Scope>(&mut scope.0)
-                },
-                ScopeLike::Global(global_scope) => {
-                    // Initialize global scope lazily, and only once.
-                    let scope = global_scope.get_or_insert_with(|| chili::Scope::global());
-
-                    unsafe {
-                        // Safety: Global scope is not dropped until the end of the program, and no
-                        // one can access this **instance** of the global
-                        // scope in the same time.
-                        transmute::<&mut chili::Scope, &mut chili::Scope>(scope)
-                    }
-                }
-            };
-
-            let scope = Scope(scope);
-
-            f(scope)
-        }
+        static SCOPE: RefCell<Option<&'static mut Scope<'static>>> = Default::default();
     }
 
     #[inline]
-    fn join_scoped<'a, A, B, RA, RB>(scope: Scope<'a>, oper_a: A, oper_b: B) -> (RA, RB)
+    fn join_scoped<A, B, RA, RB>(scope: &mut Scope<'_>, oper_a: A, oper_b: B) -> (RA, RB)
     where
-        A: Send + FnOnce(Scope<'a>) -> RA,
-        B: Send + FnOnce(Scope<'a>) -> RB,
+        A: Send + FnOnce() -> RA,
+        B: Send + FnOnce() -> RB,
         RA: Send,
         RB: Send,
     {
-        let (ra, rb) = scope.0.join(
+        scope.join(
             |scope| {
-                let scope = Scope(unsafe {
-                    // Safety: This can be dangerous if the user do transmute on the scope, but it's
-                    // not our fault if the user uses transmute.
-                    transmute::<&mut chili::Scope, &mut chili::Scope>(scope)
-                });
+                let old_scope = SCOPE.take();
+                // SATETY: it will be only accessed during `oper_a`
+                SCOPE.set(Some(unsafe { transmute::<&mut Scope, &mut Scope>(scope) }));
 
-                oper_a(scope)
+                let ra = oper_a();
+                SCOPE.set(old_scope);
+
+                ra
             },
             |scope| {
-                let scope = Scope(unsafe {
-                    // Safety: This can be dangerous if the user do transmute on the scope, but it's
-                    // not our fault if the user uses transmute.
-                    transmute::<&mut chili::Scope, &mut chili::Scope>(scope)
-                });
+                let old_scope = SCOPE.take();
+                // SATETY: it will be only accessed during `oper_b`
+                SCOPE.set(Some(unsafe { transmute::<&mut Scope, &mut Scope>(scope) }));
 
-                oper_b(scope)
+                let rb = oper_b();
+                SCOPE.set(old_scope);
+
+                rb
             },
-        );
-
-        (ra, rb)
+        )
     }
 
     #[inline]
@@ -153,46 +107,15 @@ mod par_chili {
         RA: Send,
         RB: Send,
     {
-        struct RemoveScopeGuard;
-
-        impl Drop for RemoveScopeGuard {
-            fn drop(&mut self) {
-                SCOPE.set(None);
+        let old_scope: Option<&mut Scope<'_>> = SCOPE.take();
+        match old_scope {
+            Some(scope) => {
+                let (ra, rb) = join_scoped(scope, oper_a, oper_b);
+                SCOPE.set(Some(scope));
+                (ra, rb)
             }
+            None => join_scoped(&mut Scope::global(), oper_a, oper_b),
         }
-
-        let mut scope: MaybeScope<'_> = SCOPE.take().unwrap_or_default();
-
-        let (ra, rb) = scope.with(|scope| {
-            join_scoped(
-                scope,
-                |scope| {
-                    let scope = unsafe {
-                        // Safety: inner scope cannot outlive the outer scope
-                        transmute::<Scope, Scope>(scope)
-                    };
-                    let _guard = RemoveScopeGuard;
-                    SCOPE.set(Some(MaybeScope(ScopeLike::Scope(scope))));
-
-                    oper_a()
-                },
-                |scope| {
-                    let scope = unsafe {
-                        // Safety: inner scope cannot outlive the outer scope
-                        transmute::<Scope, Scope>(scope)
-                    };
-                    let _guard = RemoveScopeGuard;
-                    SCOPE.set(Some(MaybeScope(ScopeLike::Scope(scope))));
-
-                    oper_b()
-                },
-            )
-        });
-
-        // In case of panic, we does not restore the scope so it will be None.
-        SCOPE.set(Some(scope));
-
-        (ra, rb)
     }
 }
 
