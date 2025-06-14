@@ -72,7 +72,6 @@ mod par_chili {
 
     enum ScopeLike<'a> {
         Scope(Scope<'a>),
-        #[cfg(feature = "chili")]
         Global(Option<chili::Scope<'a>>),
     }
 
@@ -88,7 +87,6 @@ mod par_chili {
         where
             F: FnOnce(Scope<'a>) -> R,
         {
-            #[cfg(feature = "chili")]
             let scope: &mut chili::Scope = match &mut self.0 {
                 ScopeLike::Scope(scope) => unsafe {
                     // Safety: chili Scope will be alive until the end of the function, because it's
@@ -96,7 +94,6 @@ mod par_chili {
 
                     transmute::<&mut chili::Scope, &mut chili::Scope>(&mut scope.0)
                 },
-                #[cfg(feature = "chili")]
                 ScopeLike::Global(global_scope) => {
                     // Initialize global scope lazily, and only once.
                     let scope = global_scope.get_or_insert_with(|| chili::Scope::global());
@@ -110,7 +107,6 @@ mod par_chili {
                 }
             };
 
-            #[cfg(feature = "chili")]
             let scope = Scope(scope);
 
             f(scope)
@@ -140,7 +136,6 @@ mod par_chili {
         RA: Send,
         RB: Send,
     {
-        #[cfg(feature = "chili")]
         let (ra, rb) = scope.0.join(
             |scope| {
                 let scope = Scope(unsafe {
