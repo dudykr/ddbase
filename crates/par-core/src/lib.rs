@@ -114,21 +114,6 @@ mod par_chili {
     }
 
     #[inline]
-    fn join_maybe_scoped<'a, A, B, RA, RB>(
-        scope: &mut MaybeScope<'a>,
-        oper_a: A,
-        oper_b: B,
-    ) -> (RA, RB)
-    where
-        A: Send + FnOnce(Scope<'a>) -> RA,
-        B: Send + FnOnce(Scope<'a>) -> RB,
-        RA: Send,
-        RB: Send,
-    {
-        scope.with(|scope| join_scoped(scope, oper_a, oper_b))
-    }
-
-    #[inline]
     fn join_scoped<'a, A, B, RA, RB>(scope: Scope<'a>, oper_a: A, oper_b: B) -> (RA, RB)
     where
         A: Send + FnOnce(Scope<'a>) -> RA,
@@ -176,31 +161,33 @@ mod par_chili {
             }
         }
 
-        let mut scope = SCOPE.take().unwrap_or_default();
+        let mut scope: MaybeScope<'_> = SCOPE.take().unwrap_or_default();
 
-        let (ra, rb) = join_maybe_scoped(
-            &mut scope,
-            |scope| {
-                let scope = unsafe {
-                    // Safety: inner scope cannot outlive the outer scope
-                    transmute::<Scope, Scope>(scope)
-                };
-                let _guard = RemoveScopeGuard;
-                SCOPE.set(Some(MaybeScope(ScopeLike::Scope(scope))));
+        let (ra, rb) = scope.with(|scope| {
+            join_scoped(
+                scope,
+                |scope| {
+                    let scope = unsafe {
+                        // Safety: inner scope cannot outlive the outer scope
+                        transmute::<Scope, Scope>(scope)
+                    };
+                    let _guard = RemoveScopeGuard;
+                    SCOPE.set(Some(MaybeScope(ScopeLike::Scope(scope))));
 
-                oper_a()
-            },
-            |scope| {
-                let scope = unsafe {
-                    // Safety: inner scope cannot outlive the outer scope
-                    transmute::<Scope, Scope>(scope)
-                };
-                let _guard = RemoveScopeGuard;
-                SCOPE.set(Some(MaybeScope(ScopeLike::Scope(scope))));
+                    oper_a()
+                },
+                |scope| {
+                    let scope = unsafe {
+                        // Safety: inner scope cannot outlive the outer scope
+                        transmute::<Scope, Scope>(scope)
+                    };
+                    let _guard = RemoveScopeGuard;
+                    SCOPE.set(Some(MaybeScope(ScopeLike::Scope(scope))));
 
-                oper_b()
-            },
-        );
+                    oper_b()
+                },
+            )
+        });
 
         // In case of panic, we does not restore the scope so it will be None.
         SCOPE.set(Some(scope));
