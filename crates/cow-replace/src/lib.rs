@@ -33,12 +33,28 @@ fn replace_str_if_contains(s: &str, from: &str, to: &str) -> Option<String> {
 
 pub trait ReplaceString {
     fn remove_all_ascii(&self, ch: AsciiChar) -> Cow<'_, str>;
-
-    fn remove_all_ascii_in_place(&mut self, ch: AsciiChar);
-
-    fn replace_all_ascii_in_place(&mut self, from: AsciiChar, to: AsciiChar);
-
     fn replace_all_str(&self, from: &str, to: &str) -> Cow<'_, str>;
+}
+
+pub trait ReplaceStringInPlace {
+    fn remove_all_ascii_in_place(&mut self, ch: AsciiChar);
+    fn replace_all_ascii_in_place(&mut self, from: AsciiChar, to: AsciiChar);
+}
+
+impl ReplaceString for &str {
+    fn remove_all_ascii(&self, ch: AsciiChar) -> Cow<'_, str> {
+        match remove_ascii_from_str(self, ch) {
+            Some(result) => Cow::Owned(result),
+            None => Cow::Borrowed(self),
+        }
+    }
+
+    fn replace_all_str(&self, from: &str, to: &str) -> Cow<'_, str> {
+        match replace_str_if_contains(self, from, to) {
+            Some(result) => Cow::Owned(result),
+            None => Cow::Borrowed(self),
+        }
+    }
 }
 
 impl ReplaceString for String {
@@ -49,6 +65,15 @@ impl ReplaceString for String {
         }
     }
 
+    fn replace_all_str(&self, from: &str, to: &str) -> Cow<'_, str> {
+        match replace_str_if_contains(self, from, to) {
+            Some(result) => Cow::Owned(result),
+            None => Cow::Borrowed(self),
+        }
+    }
+}
+
+impl ReplaceStringInPlace for String {
     fn remove_all_ascii_in_place(&mut self, ch: AsciiChar) {
         let target_byte = ch.as_byte();
         let bytes = unsafe { self.as_bytes_mut() };
@@ -79,13 +104,6 @@ impl ReplaceString for String {
             }
         }
     }
-
-    fn replace_all_str(&self, from: &str, to: &str) -> Cow<'_, str> {
-        match replace_str_if_contains(self, from, to) {
-            Some(result) => Cow::Owned(result),
-            None => Cow::Borrowed(self),
-        }
-    }
 }
 
 impl ReplaceString for Cow<'_, str> {
@@ -96,6 +114,15 @@ impl ReplaceString for Cow<'_, str> {
         }
     }
 
+    fn replace_all_str(&self, from: &str, to: &str) -> Cow<'_, str> {
+        match replace_str_if_contains(self, from, to) {
+            Some(result) => Cow::Owned(result),
+            None => Cow::Borrowed(self),
+        }
+    }
+}
+
+impl ReplaceStringInPlace for Cow<'_, str> {
     fn remove_all_ascii_in_place(&mut self, ch: AsciiChar) {
         match self {
             Cow::Borrowed(s) => {
@@ -129,13 +156,6 @@ impl ReplaceString for Cow<'_, str> {
             }
         }
     }
-
-    fn replace_all_str(&self, from: &str, to: &str) -> Cow<'_, str> {
-        match replace_str_if_contains(self, from, to) {
-            Some(result) => Cow::Owned(result),
-            None => Cow::Borrowed(self),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -143,6 +163,38 @@ mod tests {
     use std::borrow::Cow;
 
     use super::*;
+
+    #[test]
+    fn test_str_remove_all_ascii() {
+        let s = "hello world";
+        let result = s.remove_all_ascii(AsciiChar::l);
+        assert_eq!(result, "heo word");
+
+        // Test with no occurrences
+        let s = "hello world";
+        let result = s.remove_all_ascii(AsciiChar::z);
+        assert_eq!(result, "hello world");
+        match result {
+            Cow::Borrowed(_) => {}
+            Cow::Owned(_) => panic!("Should return borrowed when no changes"),
+        }
+    }
+
+    #[test]
+    fn test_str_replace_all_str() {
+        let s = "hello world hello";
+        let result = s.replace_all_str("hello", "hi");
+        assert_eq!(result, "hi world hi");
+
+        // Test with no occurrences
+        let s = "hello world";
+        let result = s.replace_all_str("xyz", "abc");
+        match result {
+            Cow::Borrowed(_) => {}
+            Cow::Owned(_) => panic!("Should return borrowed when no changes"),
+        }
+        assert_eq!(result, "hello world");
+    }
 
     #[test]
     fn test_string_remove_all_ascii() {
@@ -252,5 +304,33 @@ mod tests {
         }
         assert_eq!(result, "hello world");
         assert_eq!(s, "hello world");
+    }
+
+    #[test]
+    fn test_trait_separation() {
+        // Test that we can use both traits separately
+        fn use_replace_string<T: ReplaceString>(s: &T) -> Cow<'_, str> {
+            s.remove_all_ascii(AsciiChar::l)
+        }
+
+        fn use_replace_string_in_place<T: ReplaceStringInPlace>(s: &mut T) {
+            s.remove_all_ascii_in_place(AsciiChar::l);
+        }
+
+        let s1 = "hello world";
+        let result = use_replace_string(&s1);
+        assert_eq!(result, "heo word");
+
+        let s2 = "hello world".to_string();
+        let result = use_replace_string(&s2);
+        assert_eq!(result, "heo word");
+
+        let mut s3 = "hello world".to_string();
+        use_replace_string_in_place(&mut s3);
+        assert_eq!(s3, "heo word");
+
+        let mut s4: Cow<'_, str> = Cow::Borrowed("hello world");
+        use_replace_string_in_place(&mut s4);
+        assert_eq!(s4, "heo word");
     }
 }
