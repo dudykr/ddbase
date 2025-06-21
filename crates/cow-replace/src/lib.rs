@@ -2,6 +2,35 @@ use std::borrow::Cow;
 
 use ascii::AsciiChar;
 
+// Helper functions for common operations
+fn remove_ascii_from_str(s: &str, ch: AsciiChar) -> Option<String> {
+    let target_byte = ch.as_byte();
+    let bytes = s.as_bytes();
+
+    // Check if the character exists first
+    if !bytes.contains(&target_byte) {
+        return None;
+    }
+
+    // Create new string without the target character
+    let mut result = String::with_capacity(s.len());
+    for &byte in bytes {
+        if byte != target_byte {
+            result.push(byte as char);
+        }
+    }
+
+    Some(result)
+}
+
+fn replace_str_if_contains(s: &str, from: &str, to: &str) -> Option<String> {
+    if from.is_empty() || !s.contains(from) {
+        return None;
+    }
+
+    Some(s.replace(from, to))
+}
+
 pub trait ReplaceString {
     fn remove_all_ascii(&self, ch: AsciiChar) -> Cow<'_, str>;
 
@@ -14,23 +43,10 @@ pub trait ReplaceString {
 
 impl ReplaceString for String {
     fn remove_all_ascii(&self, ch: AsciiChar) -> Cow<'_, str> {
-        let target_byte = ch.as_byte();
-        let bytes = self.as_bytes();
-
-        // Check if the character exists first
-        if !bytes.contains(&target_byte) {
-            return Cow::Borrowed(self);
+        match remove_ascii_from_str(self, ch) {
+            Some(result) => Cow::Owned(result),
+            None => Cow::Borrowed(self),
         }
-
-        // Create new string without the target character
-        let mut result = String::with_capacity(self.len());
-        for &byte in bytes {
-            if byte != target_byte {
-                result.push(byte as char);
-            }
-        }
-
-        Cow::Owned(result)
     }
 
     fn remove_all_ascii_in_place(&mut self, ch: AsciiChar) {
@@ -65,49 +81,27 @@ impl ReplaceString for String {
     }
 
     fn replace_all_str(&self, from: &str, to: &str) -> Cow<'_, str> {
-        if from.is_empty() || !self.contains(from) {
-            return Cow::Borrowed(self);
+        match replace_str_if_contains(self, from, to) {
+            Some(result) => Cow::Owned(result),
+            None => Cow::Borrowed(self),
         }
-
-        Cow::Owned(self.replace(from, to))
     }
 }
 
 impl ReplaceString for Cow<'_, str> {
     fn remove_all_ascii(&self, ch: AsciiChar) -> Cow<'_, str> {
-        let target_byte = ch.as_byte();
-        let bytes = self.as_bytes();
-
-        // Check if the character exists first
-        if !bytes.contains(&target_byte) {
-            return Cow::Borrowed(self);
+        match remove_ascii_from_str(self, ch) {
+            Some(result) => Cow::Owned(result),
+            None => Cow::Borrowed(self),
         }
-
-        // Create new string without the target character
-        let mut result = String::with_capacity(self.len());
-        for &byte in bytes {
-            if byte != target_byte {
-                result.push(byte as char);
-            }
-        }
-
-        Cow::Owned(result)
     }
 
     fn remove_all_ascii_in_place(&mut self, ch: AsciiChar) {
         match self {
             Cow::Borrowed(s) => {
-                let target_byte = ch.as_byte();
-                let bytes = s.as_bytes();
-
-                if !bytes.contains(&target_byte) {
-                    return; // No changes needed
+                if let Some(result) = remove_ascii_from_str(s, ch) {
+                    *self = Cow::Owned(result);
                 }
-
-                // Convert to owned and remove
-                let mut owned = s.to_string();
-                owned.remove_all_ascii_in_place(ch);
-                *self = Cow::Owned(owned);
             }
             Cow::Owned(s) => {
                 s.remove_all_ascii_in_place(ch);
@@ -137,11 +131,10 @@ impl ReplaceString for Cow<'_, str> {
     }
 
     fn replace_all_str(&self, from: &str, to: &str) -> Cow<'_, str> {
-        if from.is_empty() || !self.contains(from) {
-            return Cow::Borrowed(self);
+        match replace_str_if_contains(self, from, to) {
+            Some(result) => Cow::Owned(result),
+            None => Cow::Borrowed(self),
         }
-
-        Cow::Owned(self.replace(from, to))
     }
 }
 
@@ -192,8 +185,9 @@ mod tests {
     #[test]
     fn test_string_replace_all_str() {
         let s = "hello world hello".to_string();
-        let _result = s.replace_all_str("hello", "hi");
-        assert_eq!(s, "hi world hi");
+        let result = s.replace_all_str("hello", "hi");
+        assert_eq!(result, "hi world hi");
+        assert_eq!(s, "hello world hello"); // Original string should remain unchanged
 
         // Test with no occurrences
         let s = "hello world".to_string();
@@ -202,6 +196,7 @@ mod tests {
             Cow::Borrowed(_) => {}
             Cow::Owned(_) => panic!("Should return borrowed when no changes"),
         }
+        assert_eq!(result, "hello world");
         assert_eq!(s, "hello world");
     }
 
@@ -245,8 +240,9 @@ mod tests {
     #[test]
     fn test_cow_replace_all_str() {
         let s: Cow<'_, str> = Cow::Borrowed("hello world hello");
-        let _result = s.replace_all_str("hello", "hi");
-        assert_eq!(s, "hi world hi");
+        let result = s.replace_all_str("hello", "hi");
+        assert_eq!(result, "hi world hi");
+        assert_eq!(s, "hello world hello"); // Original string should remain unchanged
 
         let s: Cow<'_, str> = Cow::Borrowed("hello world");
         let result = s.replace_all_str("xyz", "abc");
@@ -254,6 +250,7 @@ mod tests {
             Cow::Borrowed(_) => {}
             Cow::Owned(_) => panic!("Should return borrowed when no changes"),
         }
+        assert_eq!(result, "hello world");
         assert_eq!(s, "hello world");
     }
 }
