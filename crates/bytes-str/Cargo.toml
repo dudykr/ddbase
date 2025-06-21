@@ -14,5 +14,5 @@ serde = ["dep:serde"]
 
 [dependencies]
 bytes = { workspace = true }
-rkyv  = { version = "0.8", optional = true }
-serde = { version = "1", optional = true }
+rkyv  = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }

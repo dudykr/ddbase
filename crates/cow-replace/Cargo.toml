@@ -1,0 +1,14 @@
+[package]
+authors     = { workspace = true }
+description = "String replace with Cow"
+edition     = { workspace = true }
+include     = ["Cargo.toml", "src/**/*.rs"]
+license     = { workspace = true }
+name        = "cow-replace"
+repository  = { workspace = true }
+version     = "0.1.1"
+
+[features]
+
+[dependencies]
+ascii = { workspace = true }
