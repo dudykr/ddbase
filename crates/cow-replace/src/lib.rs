@@ -166,38 +166,21 @@ pub trait ReplaceStringInPlace {
     fn replace_all_ascii_in_place(&mut self, from: AsciiChar, to: AsciiChar);
 }
 
-impl ReplaceString for &str {
+impl<T: AsRef<str>> ReplaceString for T {
     fn remove_all_ascii(&self, ch: AsciiChar) -> Cow<'_, str> {
-        match remove_ascii_from_str(self, ch) {
+        match remove_ascii_from_str(self.as_ref(), ch) {
             Some(result) => Cow::Owned(result),
-            None => Cow::Borrowed(self),
+            None => Cow::Borrowed(self.as_ref()),
         }
     }
 
     fn replace_all_str(&self, from: &str, to: &str) -> Cow<'_, str> {
-        match replace_str_if_contains(self, from, to) {
+        match replace_str_if_contains(self.as_ref(), from, to) {
             Some(result) => Cow::Owned(result),
-            None => Cow::Borrowed(self),
+            None => Cow::Borrowed(self.as_ref()),
         }
     }
 }
-
-impl ReplaceString for String {
-    fn remove_all_ascii(&self, ch: AsciiChar) -> Cow<'_, str> {
-        match remove_ascii_from_str(self, ch) {
-            Some(result) => Cow::Owned(result),
-            None => Cow::Borrowed(self),
-        }
-    }
-
-    fn replace_all_str(&self, from: &str, to: &str) -> Cow<'_, str> {
-        match replace_str_if_contains(self, from, to) {
-            Some(result) => Cow::Owned(result),
-            None => Cow::Borrowed(self),
-        }
-    }
-}
-
 impl ReplaceStringInPlace for String {
     fn remove_all_ascii_in_place(&mut self, ch: AsciiChar) {
         let target_byte = ch.as_byte();
