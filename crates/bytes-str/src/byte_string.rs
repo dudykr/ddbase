@@ -123,8 +123,12 @@ impl BytesString {
     /// Splits the string into two at the given index.
     ///
     /// Returns a newly allocated String. `self` contains bytes at indices
-    /// greater than `at`, and the returned string contains bytes at indices
-    /// less than `at`.
+    /// less than `at`, and the returned string contains bytes at indices
+    /// greater than or equal to `at`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `at` does not lie on a char boundary.
     ///
     /// # Examples
     ///
@@ -139,6 +143,8 @@ impl BytesString {
     /// assert_eq!(other, "llo");
     /// ```
     pub fn split_off(&mut self, at: usize) -> Self {
+        assert!(self.is_char_boundary(at));
+
         Self {
             bytes: self.bytes.split_off(at),
         }
@@ -940,6 +946,19 @@ mod tests {
         let other = s.split_off(5);
         assert_eq!(s.as_str(), "hello");
         assert_eq!(other.as_str(), "");
+
+        // Test unicode boundaries
+        let mut s = BytesString::from("한국어");
+        let other = s.split_off(6);
+        assert_eq!(s.as_str(), "한국");
+        assert_eq!(other.as_str(), "어");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_split_off_panic_on_char_boundary() {
+        let mut s = BytesString::from("é");
+        s.split_off(1); // Should panic as it's not on a char boundary
     }
 
     #[test]
