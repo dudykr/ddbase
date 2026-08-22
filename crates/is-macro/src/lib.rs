@@ -203,8 +203,8 @@ fn expand(input: DataEnum) -> Vec<ImplItem> {
             );
             let docs_of_expect = format!(
                 "Unwraps the value, yielding the content of [`{variant}`].\n\n# Panics\n\nPanics \
-                 if the value is not [`{variant}`], with a panic message including the content of \
-                 `self`.\n\n[`{variant}`]: #variant.{variant}",
+                 if the value is not [`{variant}`]. In debug builds the panic message includes \
+                 the content of `self`.\n\n[`{variant}`]: #variant.{variant}",
                 variant = v.ident,
             );
             let docs_of_take = format!(
@@ -248,7 +248,31 @@ fn expand(input: DataEnum) -> Vec<ImplItem> {
                 }
 
                 let variant = &v.ident;
-
+                let expect_panic_arm: syn::Arm = if cfg!(feature = "small-panic") {
+                    parse_quote!(
+                        _ => {
+                            // Omit Debug formatting in release builds to reduce binary size.
+                            #[cfg(debug_assertions)]
+                            panic!(
+                                concat!("called ", stringify!(#name_of_expect), " on {:?}"),
+                                self
+                            );
+                            #[cfg(not(debug_assertions))]
+                            panic!(concat!(
+                                "called ",
+                                stringify!(#name_of_expect),
+                                " on another variant",
+                            ));
+                        }
+                    )
+                } else {
+                    parse_quote!(
+                        _ => panic!(
+                            concat!("called ", stringify!(#name_of_expect), " on {:?}"),
+                            self
+                        )
+                    )
+                };
                 let item_impl: ItemImpl = parse_quote!(
                     impl #ty {
                         #[doc = #docs_of_cast]
@@ -277,7 +301,7 @@ fn expand(input: DataEnum) -> Vec<ImplItem> {
                         {
                             match self {
                                 Self::#variant(#fields) => (#fields),
-                                _ => panic!("called expect on {:?}", self),
+                                #expect_panic_arm
                             }
                         }
 
