@@ -319,7 +319,7 @@ dependencies = [
 
 [[package]]
 name = "is-macro"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "heck",
  "proc-macro2",
