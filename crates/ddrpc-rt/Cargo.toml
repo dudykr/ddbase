@@ -5,6 +5,7 @@ edition     = { workspace = true }
 include     = ["Cargo.toml", "src/**/*.rs"]
 license     = { workspace = true }
 name        = "ddrpc-rt"
+publish     = false
 repository  = { workspace = true }
 version     = "0.1.0"
 
