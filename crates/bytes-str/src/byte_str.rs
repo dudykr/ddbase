@@ -366,19 +366,24 @@ impl BytesStr {
     /// assert_eq!(slice.as_str(), "el");
     /// ```
     pub fn slice(&self, range: impl RangeBounds<usize>) -> Self {
-        let s = Self {
-            bytes: self.bytes.slice(range),
+        let start = match range.start_bound() {
+            std::ops::Bound::Included(&n) => n,
+            std::ops::Bound::Excluded(&n) => n + 1,
+            std::ops::Bound::Unbounded => 0,
+        };
+        let end = match range.end_bound() {
+            std::ops::Bound::Included(&n) => n + 1,
+            std::ops::Bound::Excluded(&n) => n,
+            std::ops::Bound::Unbounded => self.len(),
         };
 
-        if !s.is_char_boundary(0) {
-            panic!("range start is not a character boundary");
-        }
+        assert!(start <= end, "range start must be less than or equal to end");
+        assert!(self.is_char_boundary(start), "range start is not a character boundary");
+        assert!(self.is_char_boundary(end), "range end is not a character boundary");
 
-        if !s.is_char_boundary(s.len()) {
-            panic!("range end is not a character boundary");
+        Self {
+            bytes: self.bytes.slice(range),
         }
-
-        s
     }
 
     /// See [Bytes::slice_ref]
