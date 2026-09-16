@@ -377,9 +377,18 @@ impl BytesStr {
             std::ops::Bound::Unbounded => self.len(),
         };
 
-        assert!(start <= end, "range start must be less than or equal to end");
-        assert!(self.is_char_boundary(start), "range start is not a character boundary");
-        assert!(self.is_char_boundary(end), "range end is not a character boundary");
+        assert!(
+            start <= end,
+            "range start must be less than or equal to end"
+        );
+        assert!(
+            self.is_char_boundary(start),
+            "range start is not a character boundary"
+        );
+        assert!(
+            self.is_char_boundary(end),
+            "range end is not a character boundary"
+        );
 
         Self {
             bytes: self.bytes.slice(range),
