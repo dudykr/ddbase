@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 
 use loom::{
     sync::{
-        atomic::{fence, AtomicBool, Ordering},
+        atomic::{fence, AtomicBool, AtomicU64, Ordering},
         Arc, Condvar, Mutex,
     },
     thread,
@@ -15,11 +15,31 @@ use loom::{
 use super::CallState;
 
 #[test]
+fn observing_a_blocking_generation_also_observes_its_start_time() {
+    loom::model(|| {
+        let call = Arc::new(CallState::new());
+        let started = Arc::new(AtomicU64::new(0));
+        let worker_call = call.clone();
+        let worker_started = started.clone();
+        let worker = thread::spawn(move || {
+            worker_started.store(123, Ordering::Relaxed);
+            worker_call.enter();
+        });
+        if call.syscall().is_some() {
+            assert_eq!(started.load(Ordering::Relaxed), 123);
+        }
+        worker.join().unwrap();
+    });
+}
+
+#[test]
 fn published_work_or_a_notification_prevents_a_lost_park() {
     loom::model(|| {
         let queued = Arc::new(AtomicBool::new(false));
         let signal = Arc::new(AtomicBool::new(false));
-        let gate = Arc::new((Mutex::new(()), Condvar::new()));
+        // Abstract the registered event listener: notification is retained
+        // even when publication happens before the listening thread waits.
+        let gate = Arc::new((Mutex::new(false), Condvar::new()));
         let producer_queued = queued.clone();
         let producer_signal = signal.clone();
         let producer_gate = gate.clone();
@@ -31,20 +51,19 @@ fn published_work_or_a_notification_prevents_a_lost_park() {
             if producer_signal.load(Ordering::Acquire)
                 && producer_signal.swap(false, Ordering::AcqRel)
             {
-                let _guard = producer_gate.0.lock().unwrap();
+                let mut notified = producer_gate.0.lock().unwrap();
+                *notified = true;
                 producer_gate.1.notify_one();
             }
         });
-        let mut state = gate.0.lock().unwrap();
-        loop {
-            signal.store(true, Ordering::Release);
-            fence(Ordering::SeqCst);
-            if queued.load(Ordering::Acquire) {
-                break;
+        signal.store(true, Ordering::Release);
+        fence(Ordering::SeqCst);
+        if !queued.load(Ordering::Acquire) {
+            let mut notified = gate.0.lock().unwrap();
+            while !*notified {
+                notified = gate.1.wait(notified).unwrap();
             }
-            state = gate.1.wait(state).unwrap();
         }
-        drop(state);
         producer.join().unwrap();
     });
 }

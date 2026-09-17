@@ -5,6 +5,43 @@ use super::*;
 const TIMEOUT: Duration = Duration::from_secs(5);
 
 #[test]
+fn portable_event_wait_retains_notifications_and_observes_timeouts() {
+    let event = Arc::new(Event::new());
+    let listener = event.listen();
+    event.notify(1);
+    assert!(wait_listener_portable(listener, None));
+
+    let listener = event.listen();
+    let notify = event.clone();
+    let thread = thread::spawn(move || notify.notify(1));
+    assert!(wait_listener_portable(listener, Some(TIMEOUT)));
+    thread.join().unwrap();
+
+    // No notification: a zero timeout must return instead of parking forever.
+    assert!(!wait_listener_portable(
+        event.listen(),
+        Some(Duration::ZERO)
+    ));
+}
+
+#[test]
+fn idle_workers_exit_when_shutdown_races_the_last_task() {
+    for parallelism in [1, 4] {
+        for _ in 0..32 {
+            let rt = Runtime::builder().parallelism(parallelism).build().unwrap();
+            let handle = rt.handle();
+            // Workers may be preparing to park while the last runnable
+            // completes. Shutdown must wake them even if notification precedes
+            // the actual wait on the registered listener.
+            rt.block_on(async { yield_now().await });
+            assert!(rt.shutdown_timeout(TIMEOUT));
+            assert_eq!(handle.metrics().active_permits, 0);
+            assert_eq!(handle.metrics().live_threads, 0);
+        }
+    }
+}
+
+#[test]
 fn a_spare_steals_local_children_from_a_blocked_worker() {
     let rt = Runtime::builder()
         .parallelism(1)
@@ -386,6 +423,64 @@ fn scan(rt: &Runtime) {
         .scan(&mut state, &mut observations, now + rt.shared.handoff_delay);
 }
 
+fn blocking_started(rt: &Runtime) -> Instant {
+    let state = rt.shared.state.lock();
+    let worker = &state
+        .workers
+        .iter()
+        .find(|entry| entry.worker.call.syscall().is_some())
+        .unwrap()
+        .worker;
+    rt.shared.clock_origin + Duration::from_nanos(worker.blocking_started.load(Ordering::Relaxed))
+}
+
+#[test]
+fn one_scan_replaces_all_mature_blocked_permits() {
+    let mut builder = Runtime::builder().parallelism(4).max_threads(8);
+    builder.manual_monitor = true;
+    let rt = builder.build().unwrap();
+    let parents: Vec<_> = (0..4).map(|_| blocked(&rt)).collect();
+    let (entered, started) = mpsc::channel();
+    let mut children = Vec::new();
+    let mut releases = Vec::new();
+    for _ in 0..4 {
+        let entered = entered.clone();
+        let (release, released) = mpsc::channel();
+        releases.push(release);
+        children.push(rt.spawn(async move {
+            entered.send(()).unwrap();
+            // Keep the replacement permit, so one worker cannot run all four
+            // children and hide a serialized handoff.
+            released.recv_timeout(TIMEOUT).unwrap();
+        }));
+    }
+    let mut observations = Vec::new();
+    {
+        let mut state = rt.shared.state.lock();
+        rt.shared.scan(
+            &mut state,
+            &mut observations,
+            Instant::now() + rt.shared.handoff_delay,
+        );
+        assert_eq!(state.handoffs, 4);
+        assert_eq!(state.workers.len(), 8);
+    }
+    for _ in 0..4 {
+        started.recv_timeout(TIMEOUT).unwrap();
+    }
+    for release in releases {
+        release.send(()).unwrap();
+    }
+    for (parent, release) in parents {
+        release.send(()).unwrap();
+        futures::executor::block_on(parent).unwrap();
+    }
+    for child in children {
+        futures::executor::block_on(child).unwrap();
+    }
+    assert!(rt.shutdown_timeout(TIMEOUT));
+}
+
 #[test]
 fn existing_workers_can_steal_from_a_newly_added_worker() {
     let rt = runtime(3);
@@ -466,7 +561,7 @@ fn quick_and_nested_calls_do_not_handoff() {
 }
 
 #[test]
-fn handoff_needs_elapsed_observation_and_queued_work() {
+fn handoff_needs_elapsed_call_and_queued_work() {
     let rt = runtime(2);
     let (task, release) = blocked(&rt);
     scan(&rt);
@@ -476,7 +571,7 @@ fn handoff_needs_elapsed_observation_and_queued_work() {
     let other = rt.spawn(async move {
         done.send(()).unwrap();
     });
-    let now = Instant::now();
+    let now = blocking_started(&rt);
     let mut observations = Vec::new();
     {
         let mut state = rt.shared.state.lock();
@@ -690,7 +785,7 @@ fn fast_returns_and_new_generations_invalidate_monitor_observations() {
     });
     assert_eq!(started.recv_timeout(TIMEOUT).unwrap(), 0);
     let other = rt.spawn(async { 7 });
-    let now = Instant::now();
+    let now = blocking_started(&rt);
     let mut observations = Vec::new();
     {
         let mut state = rt.shared.state.lock();

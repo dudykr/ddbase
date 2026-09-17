@@ -101,30 +101,35 @@ and checks the injection queue at least every 16 polls. Returning callers and
 shutdown force an earlier checkpoint at the next poll boundary. Task registration
 and removal use sharded `parking_lot`-protected registries. Normal local queue
 operations do not acquire the scheduler mutex or update a shared task counter.
-Workers rebuild their rotated work-stealing peer lists at scheduler checkpoints
-and increment poll metrics atomically. Tasks wrap their pinned user futures in
+Workers retain their rotated work-stealing peer lists until the worker set grows
+and increment poll metrics atomically. The first search and permit acquisition
+share the scheduler lock; searches during the bounded poll loop run without it.
+Tasks wrap their pinned user futures in
 `Abortable`, which checks cancellation and registers pending-task wakeups.
-The peer-list and cancellation-waker caches were reverted after the native
-Rspack comparison showed a build-time regression. The worker wakeup fix and
-cancellation, shutdown, fairness and worker-growth regression tests remain.
+Cancellation, shutdown, fairness and worker-growth regression tests cover these
+scheduler boundaries.
 
 Ready workers, returning callers, the monitor, and shutdown observers have
-separate wake paths. Enqueue wakes a worker only when an execution permit is
-available; returning callers wake in FIFO order on per-worker condition
-variables. Queue publication and the final search before parking use paired
+separate wake paths. Enqueue notifies registered event listeners without taking
+the scheduler mutex; a worker still needs a permit before it polls user code.
+Returning callers wake in FIFO order on per-worker condition variables.
+Queue publication and the final search before parking use paired
 memory fences so either the waiter sees work or its publisher sees the wake
 request. Ordinary task completion does not broadcast to idle threads; shutdown
 still wakes every parked worker.
 Wake requests are rearmed while execution capacity remains available, so
 successive enqueues can wake workers that were already parked.
 
-The common blocking-call path is TLS bookkeeping and atomic syscall-generation transitions:
-it does not allocate a task, enqueue work, wake another thread, or read a clock
-per call. A monitor samples at the configured delay. After observing the same
-generation for at least that delay, it can reclaim the permit if work is waiting
-and a replacement thread is available. A first observation starts the interval;
-100 microseconds is not an upper bound on handoff latency. OS timer resolution
-and scheduling affect it. The monitor parks when no queued work or returning
+The common blocking-call path timestamps the outermost call, updates TLS
+bookkeeping, and publishes an atomic syscall generation. It does not allocate
+a task, enqueue work, or wake another thread per call. A monitor samples at the
+configured delay. Once the call has lasted at least that delay, it can reclaim
+the permit if work is waiting and a replacement thread is available. One scan
+can replace multiple blocked workers, reserving enough threads for each released
+permit and stopping when free permits cover the waiting work. The interval starts
+at call entry rather than the monitor's first observation. 100 microseconds is
+not an upper bound on handoff latency; OS timer resolution and scheduling affect
+it. The monitor parks when no queued work or returning
 caller needs attention. Fast batch steals notify after publishing into their
 destination deque, so a waiter that missed both queues during transfer is
 woken. Ordinary task wakes do not interrupt an active observation interval to
