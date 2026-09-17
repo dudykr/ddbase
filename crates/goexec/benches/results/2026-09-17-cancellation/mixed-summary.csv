@@ -1,0 +1,7 @@
+parallelism,workload,label,median_ops_per_sec,min_ops_per_sec,max_ops_per_sec
+1,Mixed,goexec,13027.11,12463.52,13498.58
+1,Mixed,baseline,12591.36,11703.33,14817.83
+4,Mixed,goexec,39939.96,39819.02,40555.86
+4,Mixed,baseline,39705.36,38062.72,40081.83
+16,Mixed,goexec,101004.4,98637.59,103542.34
+16,Mixed,baseline,104314.37,101006.79,106986.59

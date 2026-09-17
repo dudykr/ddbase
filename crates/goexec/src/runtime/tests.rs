@@ -66,13 +66,24 @@ fn stealing_nested_children_and_blocking_their_owners_keeps_progress() {
 fn external_injection_is_not_starved_by_a_self_waking_local_task() {
     let rt = Runtime::builder().parallelism(1).build().unwrap();
     let (started, running) = mpsc::channel();
+    let (resume, resumed) = mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
     let done = stop.clone();
     let busy = rt.spawn(async move {
-        started.send(()).unwrap();
-        while !done.load(Ordering::Acquire) {
+        // Exercise repeated local wakes and scheduler checkpoints before
+        // injecting work from outside the runtime.
+        for _ in 0..256 {
             yield_now().await;
         }
+        started.send(()).unwrap();
+        resumed.recv_timeout(TIMEOUT).unwrap();
+        for _ in 0..16 {
+            yield_now().await;
+            if done.load(Ordering::Acquire) {
+                return;
+            }
+        }
+        panic!("external work missed the 16-poll injector check");
     });
     running.recv_timeout(TIMEOUT).unwrap();
     let (sent, received) = mpsc::channel();
@@ -80,10 +91,36 @@ fn external_injection_is_not_starved_by_a_self_waking_local_task() {
         stop.store(true, Ordering::Release);
         sent.send(()).unwrap();
     });
+    resume.send(()).unwrap();
     received.recv_timeout(TIMEOUT).unwrap();
     futures::executor::block_on(injected).unwrap();
     futures::executor::block_on(busy).unwrap();
     assert!(rt.shutdown_timeout(TIMEOUT));
+}
+
+#[test]
+fn shutdown_cancels_a_continuously_runnable_task() {
+    let rt = Runtime::builder().parallelism(1).build().unwrap();
+    let handle = rt.handle();
+    let (started, running) = mpsc::channel();
+    let task = rt.spawn(async move {
+        for _ in 0..256 {
+            yield_now().await;
+        }
+        started.send(()).unwrap();
+        loop {
+            yield_now().await;
+        }
+    });
+    running.recv_timeout(TIMEOUT).unwrap();
+    // Poll metrics remain visible while the task keeps rescheduling itself.
+    assert!(handle.metrics().polls >= 256);
+    assert!(rt.shutdown_timeout(TIMEOUT));
+    assert!(futures::executor::block_on(task)
+        .unwrap_err()
+        .is_cancelled());
+    assert_eq!(handle.metrics().active_permits, 0);
+    assert_eq!(handle.metrics().tasks, 0);
 }
 
 #[test]
@@ -147,8 +184,14 @@ fn a_returning_caller_interrupts_a_worker_lease_at_the_poll_boundary() {
     started.recv_timeout(TIMEOUT).unwrap();
     let (polling, polled) = mpsc::channel();
     let (release_poll, poll_release) = mpsc::channel();
+    let mut warmup_polls = 0;
     let mut first = true;
     let busy = rt.spawn(poll_fn(move |cx| {
+        if warmup_polls < 256 {
+            warmup_polls += 1;
+            cx.waker().wake_by_ref();
+            return Poll::Pending;
+        }
         if first {
             first = false;
             polling.send(()).unwrap();

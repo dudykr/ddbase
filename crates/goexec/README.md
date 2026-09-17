@@ -83,6 +83,11 @@ operations do not acquire the scheduler mutex or update a shared task counter.
 Each worker caches its work-stealing peers until the worker set grows, avoiding
 allocation and reference-count traffic at every checkpoint. Poll metrics are
 published by their owning worker with atomic stores instead of atomic increments.
+Tasks also keep their cancellation-waker registration while the polling waker
+is unchanged. They still check cancellation before polling user code and after
+it yields; a new waker uses `Abortable`'s registration handshake. This avoids
+repeated atomic registration on every cooperative yield without changing abort
+or shutdown semantics.
 
 Ready workers, returning callers, the monitor, and shutdown observers have
 separate wake paths. Enqueue wakes a worker only when an execution permit is
@@ -222,6 +227,8 @@ order, five times at parallelism 1, 4 and 16 with four lanes per permit. Choose
 environment metadata go to `target/goexec-comparison/results`. `--scale 0.1
 --repeats 1` is a smoke run; larger scales lengthen each workload. Existing
 `RUSTC_WRAPPER`/`RUSTFLAGS` settings are honored (unset an unavailable wrapper).
+For a longer comparison against `--baseline`, use `--engines goexec,baseline`
+to measure just the two Rust binaries. The default still includes Go.
 
 The Go process uses one goroutine per lane, explicit `GOMAXPROCS`, and
 `runtime.Gosched()` after every operation. `Yield` measures cooperative
