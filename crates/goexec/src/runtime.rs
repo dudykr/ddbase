@@ -658,20 +658,27 @@ impl Shared {
     }
 
     fn run_worker(&self, worker: &Worker, local: &LocalQueue<Runnable>) {
+        let mut stealers = Vec::new();
+        let mut completed_polls = 0;
         let mut state = self.state.lock();
         loop {
             if self.finished(&state) {
                 return;
             }
             if state.permits < self.parallelism && state.returning.is_empty() {
-                let stealers: Vec<_> = (1..state.workers.len())
-                    .map(|offset| {
+                // Workers are only added, never removed while the scheduler is
+                // running. Keep the rotated steal order across checkpoints;
+                // cloning every stealer here allocates and contends on their
+                // Arc counts once per 64 polls, even with purely local work.
+                if stealers.len() + 1 != state.workers.len() {
+                    stealers.clear();
+                    stealers.extend((1..state.workers.len()).map(|offset| {
                         state.workers[(worker.id + offset) % state.workers.len()]
                             .worker
                             .stealer
                             .clone()
-                    })
-                    .collect();
+                    }));
+                }
                 if let Some((mut runnable, _)) = self.next_runnable(local, &stealers, true) {
                     state.permits += 1;
                     state.polling += 1;
@@ -682,7 +689,10 @@ impl Shared {
                     let mut polls = 0;
                     loop {
                         let _ = catch_unwind(AssertUnwindSafe(|| runnable.run()));
-                        worker.polls.fetch_add(1, Ordering::Relaxed);
+                        // Only this worker writes its counter. Publish every
+                        // completed poll for metrics without an atomic RMW.
+                        completed_polls += 1;
+                        worker.polls.store(completed_polls, Ordering::Relaxed);
                         polls += 1;
                         // A permit belongs to this worker across a bounded run
                         // of polls. Returning callers take it at the next poll
