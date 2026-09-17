@@ -6,7 +6,7 @@ runs on the current OS thread; a monitor can lend its execution permit to
 another worker while the call is outstanding. No Tokio patches, syscall hooks,
 stack switching, or unsafe code are used in this crate.
 
-`goexec` 0.1.2 is a workspace crate. Linux, macOS and Windows are
+`goexec` 0.1.3 is a workspace crate. Linux, macOS and Windows are
 supported with the repository's pinned nightly toolchain.
 
 ## Use
