@@ -80,6 +80,9 @@ and checks the injection queue at least every 16 polls. Returning callers and
 shutdown force an earlier checkpoint at the next poll boundary. Task registration
 and removal use sharded `parking_lot`-protected registries. Normal local queue
 operations do not acquire the scheduler mutex or update a shared task counter.
+Each worker caches its work-stealing peers until the worker set grows, avoiding
+allocation and reference-count traffic at every checkpoint. Poll metrics are
+published by their owning worker with atomic stores instead of atomic increments.
 
 Ready workers, returning callers, the monitor, and shutdown observers have
 separate wake paths. Enqueue wakes a worker only when an execution permit is
@@ -200,3 +203,65 @@ boundaries; use larger runs and interpret these rows accordingly.
 Results depend on OS scheduling, caching, load and hardware. No speedup is
 promised and CI has no timing threshold. Short-call handoff avoidance and
 independent progress during long blocking calls are correctness requirements.
+
+### Go scheduler comparison
+
+Measured results, including workload-specific regressions and raw CSV, are in
+[BENCHMARKS.md](BENCHMARKS.md).
+
+The optional Go companion needs Go 1.22+ on Linux or macOS and Python 3.9+.
+From the workspace root, run:
+
+```sh
+python3 crates/goexec/benches/compare_go.py
+```
+
+This builds both optimized binaries and measures them **serially**, in shuffled
+order, five times at parallelism 1, 4 and 16 with four lanes per permit. Choose
+`--parallelism 1,4` on smaller machines. CSV runs, median/min/max summaries, and
+environment metadata go to `target/goexec-comparison/results`. `--scale 0.1
+--repeats 1` is a smoke run; larger scales lengthen each workload. Existing
+`RUSTC_WRAPPER`/`RUSTFLAGS` settings are honored (unset an unavailable wrapper).
+
+The Go process uses one goroutine per lane, explicit `GOMAXPROCS`, and
+`runtime.Gosched()` after every operation. `Yield` measures cooperative
+rescheduling alone; `Empty` adds goexec's empty blocking boundary. `Cpu` uses
+the same dependent 10,000-step multiply/rotate calculation. `CachedRead` compares
+the languages' whole-file APIs on the same cached 4 KiB fixture. `SyscallWait`
+uses **blocking** socket descriptors with Go `syscall.Read`/`Write`, so the Go
+runtime sees real syscall entry/exit. This deliberately does not measure Go's
+network poller, timers or asynchronous preemption. `Mixed` repeats one wait,
+one read and two CPU operations. Delayed socket peers run as Rust threads in the
+parent process, outside Go's CPU budget and both measured runtimes.
+
+The script disables per-operation clocks/sample allocation by default for
+throughput measurements. Use `--latency` in a separate run to collect p50/p99;
+as in the existing harness, those samples exclude yields and initial queueing.
+Initialization, fixture/connection setup and warmup are excluded from steady
+timing; lane submission, result collection and lane socket close are included.
+Warmup is up to 32 operations per lane. Go's process startup is not comparable
+to Rust runtime construction and has no `init` row. Go worker/handoff columns
+are blank because matching counters are unavailable. Go retains normal GC and
+its default runtime thread limit; its cap is not equated to goexec's worker cap.
+These are end-to-end workload measurements: compiler, standard-library, allocator
+and scheduling differences all contribute, and `Gosched` need not have the same
+fairness/cost as a self-waking Rust future.
+
+To compare a scheduler change, first save the original `compare` executable
+reported by `cargo bench -p goexec --locked --bench compare --no-run`. Then edit
+the scheduler and pass `--baseline /absolute/path/to/saved-compare` to the script.
+The old executable must support the same benchmark CLI. `--rust-binary` and
+`--go-binary` can reuse prebuilt binaries. Individual workloads and engines are
+also available directly:
+
+```sh
+go build -o target/go-scheduler crates/goexec/benches/go/main.go
+cargo bench -p goexec --locked --bench compare -- \
+    --go-binary "$PWD/target/go-scheduler" --modes Goexec,Go \
+    --cases Yield,Empty,CachedRead,Cpu,SyscallWait,Mixed \
+    --parallelism 4 --lanes 16 --iterations 2000 --no-latency
+```
+
+Go's scheduling API and syscall behavior are described in the
+[runtime documentation](https://pkg.go.dev/runtime) and
+[Go 1.25.1 scheduler source](https://github.com/golang/go/blob/go1.25.1/src/runtime/proc.go).

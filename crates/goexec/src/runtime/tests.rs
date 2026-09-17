@@ -311,6 +311,59 @@ fn scan(rt: &Runtime) {
         .scan(&mut state, &mut observations, now + rt.shared.handoff_delay);
 }
 
+#[test]
+fn existing_workers_can_steal_from_a_newly_added_worker() {
+    let rt = runtime(3);
+    // Both initial workers take a turn before the third worker exists, so
+    // their cached victim lists initially contain only each other.
+    let (first, release_first) = blocked(&rt);
+    let (entered_second, second_started) = mpsc::channel();
+    let (release_second, second_release) = mpsc::channel();
+    let second = rt.spawn(async move {
+        blocking(|| {
+            entered_second.send(()).unwrap();
+            second_release.recv_timeout(TIMEOUT).unwrap();
+        });
+    });
+    scan(&rt);
+    second_started.recv_timeout(TIMEOUT).unwrap();
+
+    let (entered_third, third_started) = mpsc::channel();
+    let (release_third, third_release) = mpsc::channel();
+    let (stolen, child_ran) = mpsc::channel();
+    let third = rt.spawn(async move {
+        assert_eq!(CURRENT.with(|c| c.borrow().as_ref().unwrap().worker.id), 2);
+        let child = spawn(async move {
+            stolen
+                .send(CURRENT.with(|c| c.borrow().as_ref().unwrap().worker.id))
+                .unwrap();
+        });
+        blocking(|| {
+            entered_third.send(()).unwrap();
+            third_release.recv_timeout(TIMEOUT).unwrap();
+        });
+        child.await.unwrap();
+    });
+    scan(&rt);
+    third_started.recv_timeout(TIMEOUT).unwrap();
+    assert_eq!(rt.metrics().spawned_threads, 3);
+
+    release_first.send(()).unwrap();
+    wait_state(&rt, |state| state.returning.len() == 1);
+    scan(&rt);
+    // The only runnable is on worker 2; one of the initial workers must find
+    // it after refreshing its victim list. The other two remain in syscalls.
+    assert!(child_ran.recv_timeout(TIMEOUT).unwrap() < 2);
+    release_second.send(()).unwrap();
+    release_third.send(()).unwrap();
+    futures::executor::block_on(async {
+        first.await.unwrap();
+        second.await.unwrap();
+        third.await.unwrap();
+    });
+    assert!(rt.shutdown_timeout(TIMEOUT));
+}
+
 fn wait_state(rt: &Runtime, predicate: impl Fn(&Scheduler) -> bool) {
     let mut state = rt.shared.state.lock();
     rt.shared

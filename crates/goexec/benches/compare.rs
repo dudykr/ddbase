@@ -4,8 +4,9 @@ use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     path::PathBuf,
+    process::Command,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc, Arc, Mutex,
     },
     thread,
@@ -14,6 +15,7 @@ use std::{
 
 #[derive(Clone, Copy, Debug)]
 enum Case {
+    Yield,
     Empty,
     CachedRead,
     SyscallWait,
@@ -23,6 +25,7 @@ enum Case {
 
 #[derive(Clone, Copy)]
 enum Op {
+    Yield,
     Empty,
     Read,
     Wait,
@@ -32,6 +35,7 @@ enum Op {
 impl Case {
     fn operation(self, iteration: usize) -> Op {
         match self {
+            Self::Yield => Op::Yield,
             Self::Empty => Op::Empty,
             Self::CachedRead => Op::Read,
             Self::SyscallWait => Op::Wait,
@@ -53,6 +57,7 @@ struct Context {
 impl Context {
     fn run(&mut self, operation: Op) {
         match operation {
+            Op::Yield => {}
             Op::Empty => black_box(()),
             Op::Read => {
                 black_box(std::fs::read(&self.path).unwrap());
@@ -166,6 +171,7 @@ enum Mode {
     Goexec,
     SpawnBlocking,
     BlockInPlace,
+    Go,
 }
 
 enum Engine {
@@ -177,6 +183,7 @@ enum Engine {
 impl Engine {
     fn new(mode: Mode, parallelism: usize, max_threads: usize) -> Self {
         match mode {
+            Mode::Go => unreachable!("Go runs in its own process"),
             Mode::Direct => Self::Direct(SyncPool::new(parallelism)),
             Mode::Goexec => Self::Goexec(
                 goexec::Runtime::builder()
@@ -219,7 +226,13 @@ impl Engine {
         }
     }
 
-    fn run(&self, case: Case, contexts: Vec<Context>, iterations: usize) -> Vec<Duration> {
+    fn run(
+        &self,
+        case: Case,
+        contexts: Vec<Context>,
+        iterations: usize,
+        latency: bool,
+    ) -> Vec<Duration> {
         match self {
             Self::Direct(pool) => {
                 let (sender, receiver) = mpsc::channel();
@@ -230,11 +243,14 @@ impl Engine {
                         .as_ref()
                         .unwrap()
                         .send(Box::new(move || {
-                            let mut samples = Vec::with_capacity(iterations);
+                            let mut samples =
+                                Vec::with_capacity(if latency { iterations } else { 0 });
                             for iteration in 0..iterations {
-                                let start = Instant::now();
+                                let start = latency.then(Instant::now);
                                 context.run(case.operation(iteration));
-                                samples.push(start.elapsed());
+                                if let Some(start) = start {
+                                    samples.push(start.elapsed());
+                                }
                             }
                             sender.send(samples).unwrap();
                         }))
@@ -247,16 +263,19 @@ impl Engine {
                     .into_iter()
                     .map(|mut context| {
                         rt.spawn(async move {
-                            let mut samples = Vec::with_capacity(iterations);
+                            let mut samples =
+                                Vec::with_capacity(if latency { iterations } else { 0 });
                             for iteration in 0..iterations {
                                 let operation = case.operation(iteration);
-                                let start = Instant::now();
-                                if matches!(operation, Op::Cpu) {
+                                let start = latency.then(Instant::now);
+                                if matches!(operation, Op::Cpu | Op::Yield) {
                                     context.run(operation);
                                 } else {
                                     goexec::blocking(|| context.run(operation));
                                 }
-                                samples.push(start.elapsed());
+                                if let Some(start) = start {
+                                    samples.push(start.elapsed());
+                                }
                                 goexec::yield_now().await;
                             }
                             samples
@@ -277,11 +296,12 @@ impl Engine {
                     .into_iter()
                     .map(|mut context| {
                         rt.spawn(async move {
-                            let mut samples = Vec::with_capacity(iterations);
+                            let mut samples =
+                                Vec::with_capacity(if latency { iterations } else { 0 });
                             for iteration in 0..iterations {
                                 let operation = case.operation(iteration);
-                                let start = Instant::now();
-                                if matches!(operation, Op::Cpu) {
+                                let start = latency.then(Instant::now);
+                                if matches!(operation, Op::Cpu | Op::Yield) {
                                     // CPU work stays on executor workers for all modes.
                                     context.run(operation);
                                 } else if matches!(mode, Mode::SpawnBlocking) {
@@ -294,7 +314,9 @@ impl Engine {
                                 } else {
                                     tokio::task::block_in_place(|| context.run(operation));
                                 }
-                                samples.push(start.elapsed());
+                                if let Some(start) = start {
+                                    samples.push(start.elapsed());
+                                }
                                 tokio::task::yield_now().await;
                             }
                             samples
@@ -320,21 +342,146 @@ impl Drop for Fixture {
     }
 }
 
+// Keep the delayed peers out of Go's GOMAXPROCS budget as well as its timing.
+// Go opens a fresh connection per lane for both warmup and measurement.
+fn run_go(
+    binary: &std::path::Path,
+    case: Case,
+    path: &std::path::Path,
+    parallelism: usize,
+    lanes: usize,
+    iterations: usize,
+    latency: bool,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let done = Arc::new(AtomicBool::new(false));
+    let stopped = done.clone();
+    let connections = if matches!(case, Case::SyscallWait | Case::Mixed) {
+        2 * lanes // Warmup and measured contexts.
+    } else {
+        0
+    };
+    let server = thread::spawn(move || {
+        let mut peers = Vec::new();
+        // Once setup is complete, join the peers instead of periodically
+        // waking an accept loop during Go's timed region.
+        while peers.len() < connections && !stopped.load(Ordering::Acquire) {
+            match listener.accept() {
+                Ok((mut peer, _)) => {
+                    // Accepted sockets inherit O_NONBLOCK on some Unix hosts.
+                    peer.set_nonblocking(false).unwrap();
+                    peer.set_nodelay(true).unwrap();
+                    peer.set_read_timeout(Some(Duration::from_secs(30)))
+                        .unwrap();
+                    peers.push(thread::spawn(move || {
+                        let mut byte = [0];
+                        while peer.read_exact(&mut byte).is_ok() {
+                            thread::sleep(Duration::from_micros(500));
+                            if peer.write_all(&byte).is_err() {
+                                break;
+                            }
+                        }
+                    }));
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(1));
+                }
+                Err(error) => panic!("accept: {error}"),
+            }
+        }
+        for peer in peers {
+            peer.join().unwrap();
+        }
+    });
+    let status = Command::new(binary)
+        .args([
+            "--case",
+            &format!("{case:?}"),
+            "--parallelism",
+            &parallelism.to_string(),
+            "--lanes",
+            &lanes.to_string(),
+            "--iterations",
+            &iterations.to_string(),
+            "--peer",
+            &address.to_string(),
+            &format!("--latency={latency}"),
+            "--path",
+        ])
+        .arg(path)
+        .status();
+    done.store(true, Ordering::Release);
+    server.join().unwrap();
+    assert!(
+        status.expect("start Go benchmark").success(),
+        "Go benchmark failed"
+    );
+}
+
 fn main() {
     let mut iterations = 2_000usize;
     let mut parallelism = thread::available_parallelism().map_or(1, usize::from);
     let mut lanes = None;
+    let mut latency = true;
+    let mut go_binary = None;
+    let mut cases = vec![
+        Case::Empty,
+        Case::CachedRead,
+        Case::SyscallWait,
+        Case::Cpu,
+        Case::Mixed,
+    ];
+    let mut modes = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--iterations" => iterations = args.next().unwrap().parse().unwrap(),
             "--parallelism" => parallelism = args.next().unwrap().parse().unwrap(),
             "--lanes" => lanes = Some(args.next().unwrap().parse::<usize>().unwrap()),
+            "--no-latency" => latency = false,
+            "--go-binary" => go_binary = Some(PathBuf::from(args.next().unwrap())),
+            "--cases" => {
+                cases = args
+                    .next()
+                    .unwrap()
+                    .split(',')
+                    .map(|case| match case {
+                        "Yield" => Case::Yield,
+                        "Empty" => Case::Empty,
+                        "CachedRead" => Case::CachedRead,
+                        "SyscallWait" => Case::SyscallWait,
+                        "Cpu" => Case::Cpu,
+                        "Mixed" => Case::Mixed,
+                        _ => panic!("unknown case {case}"),
+                    })
+                    .collect();
+            }
+            "--modes" => {
+                modes = Some(
+                    args.next()
+                        .unwrap()
+                        .split(',')
+                        .map(|mode| match mode {
+                            "Direct" => Mode::Direct,
+                            "Goexec" => Mode::Goexec,
+                            "SpawnBlocking" => Mode::SpawnBlocking,
+                            "BlockInPlace" => Mode::BlockInPlace,
+                            "Go" => Mode::Go,
+                            _ => panic!("unknown mode {mode}"),
+                        })
+                        .collect::<Vec<_>>(),
+                );
+            }
             "--bench" => {}
             "--help" | "-h" => {
                 eprintln!(
-                    "compare [--iterations 2000] [--parallelism CPUs] [--lanes \
-                     4*parallelism]\nCSV on stdout; progress and configuration on stderr."
+                    "compare [--iterations 2000] [--parallelism CPUs] [--lanes 4*parallelism] \
+                     [--no-latency] [--go-binary PATH]\n[--cases \
+                     Yield,Empty,CachedRead,SyscallWait,Cpu,Mixed]\n[--modes \
+                     Direct,Goexec,SpawnBlocking,BlockInPlace,Go]\nCSV on stdout; progress and \
+                     configuration on stderr."
                 );
                 return;
             }
@@ -344,6 +491,22 @@ fn main() {
     let lanes = lanes.unwrap_or(parallelism * 4);
     assert!(iterations > 0 && parallelism > 0 && lanes > 0);
     let max_threads = 512.max(parallelism + 1);
+    let modes = modes.unwrap_or_else(|| {
+        let mut modes = vec![
+            Mode::Direct,
+            Mode::Goexec,
+            Mode::SpawnBlocking,
+            Mode::BlockInPlace,
+        ];
+        if go_binary.is_some() {
+            modes.push(Mode::Go);
+        }
+        modes
+    });
+    assert!(
+        !modes.iter().any(|mode| matches!(mode, Mode::Go)) || go_binary.is_some(),
+        "--modes Go requires --go-binary PATH"
+    );
     let directory = std::env::temp_dir().join(format!("goexec-bench-{}", std::process::id()));
     std::fs::create_dir(&directory).unwrap();
     let fixture = Fixture(directory);
@@ -352,26 +515,28 @@ fn main() {
     black_box(std::fs::read(&path).unwrap());
     eprintln!(
         "parallelism={parallelism}, lanes={lanes}, iterations/lane={iterations}, \
-         max_threads={max_threads}, reply_delay=500us; peer threads excluded"
+         max_threads={max_threads}, latency={latency}, reply_delay=500us; peer threads excluded"
     );
     println!(
         "engine,workload,phase,operations,elapsed_us,ops_per_sec,p50_ns,p99_ns,peak_workers,\
          handoffs"
     );
-    for case in [
-        Case::Empty,
-        Case::CachedRead,
-        Case::SyscallWait,
-        Case::Cpu,
-        Case::Mixed,
-    ] {
-        for mode in [
-            Mode::Direct,
-            Mode::Goexec,
-            Mode::SpawnBlocking,
-            Mode::BlockInPlace,
-        ] {
+    for case in cases {
+        for &mode in &modes {
             eprintln!("{mode:?} {case:?}");
+            if matches!(mode, Mode::Go) {
+                std::io::stdout().flush().unwrap();
+                run_go(
+                    go_binary.as_ref().unwrap(),
+                    case,
+                    &path,
+                    parallelism,
+                    lanes,
+                    iterations,
+                    latency,
+                );
+                continue;
+            }
             let init = Instant::now();
             let engine = Engine::new(mode, parallelism, max_threads);
             let init_time = init.elapsed();
@@ -382,14 +547,14 @@ fn main() {
                 workers
             );
             let (warm, peers) = contexts(case, lanes, &path);
-            black_box(engine.run(case, warm, iterations.min(32)));
+            black_box(engine.run(case, warm, iterations.min(32), latency));
             for peer in peers {
                 peer.join().unwrap();
             }
             let (contexts, peers) = contexts(case, lanes, &path);
             let (_, before) = engine.counters();
             let start = Instant::now();
-            let mut samples = engine.run(case, contexts, iterations);
+            let mut samples = engine.run(case, contexts, iterations, latency);
             let elapsed = start.elapsed();
             let (workers, after) = engine.counters();
             for peer in peers {
@@ -397,7 +562,13 @@ fn main() {
             }
             samples.sort_unstable();
             let quantile = |percent: usize| {
-                samples[(samples.len() * percent).div_ceil(100).saturating_sub(1)].as_nanos()
+                if samples.is_empty() {
+                    String::new()
+                } else {
+                    samples[(samples.len() * percent).div_ceil(100).saturating_sub(1)]
+                        .as_nanos()
+                        .to_string()
+                }
             };
             let handoffs = after
                 .zip(before)
@@ -405,9 +576,9 @@ fn main() {
                 .unwrap_or_default();
             println!(
                 "{mode:?},{case:?},steady,{},{},{:.2},{},{},{workers},{handoffs}",
-                samples.len(),
+                lanes * iterations,
                 elapsed.as_micros(),
-                samples.len() as f64 / elapsed.as_secs_f64(),
+                (lanes * iterations) as f64 / elapsed.as_secs_f64(),
                 quantile(50),
                 quantile(99)
             );

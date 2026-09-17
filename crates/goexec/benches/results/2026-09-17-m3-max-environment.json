@@ -1,0 +1,33 @@
+{
+  "started_at": "2026-09-17T03:17:18.384986+00:00",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "cpu_count": 16,
+  "go": "go version go1.25.1 darwin/arm64",
+  "rustc": "rustc 1.81.0-nightly (506985649 2024-07-20)",
+  "revision": "ea3bcdb0142e51fcb5188a93be57a1fafb3822fc",
+  "working_tree": " M crates/goexec/README.md\n M crates/goexec/benches/compare.rs\n M crates/goexec/src/runtime.rs\n M crates/goexec/src/runtime/tests.rs\n?? crates/goexec/benches/compare_go.py\n?? crates/goexec/benches/go/\n",
+  "options": {
+    "output": "target/goexec-comparison/final",
+    "rust_binary": null,
+    "baseline": "target/goexec-comparison/compare-baseline",
+    "go_binary": null,
+    "parallelism": "1,4,16",
+    "cases": "Yield,Empty,CachedRead,Cpu,SyscallWait,Mixed",
+    "repeats": 5,
+    "scale": 1.0,
+    "latency": false
+  },
+  "environment": {
+    "GOGC": null,
+    "GOMEMLIMIT": null,
+    "GODEBUG": null,
+    "GOEXPERIMENT": null,
+    "RUSTFLAGS": null
+  },
+  "order_seed": 0,
+  "binaries_sha256": {
+    "goexec": "21daab012db4c88d2f6ddf8c88c087b3c4f94f581934b121134959bd79e468ed",
+    "go": "93e697e84286b1497ecfa1b62c34755a6b950e97187c365b6617f36a4797e688",
+    "baseline": "34109877054a7f893150bd10afdbc6fb363df1fba47c124b2e41958edb2964af"
+  }
+}
