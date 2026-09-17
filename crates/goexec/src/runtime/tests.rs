@@ -174,6 +174,42 @@ fn a_returning_caller_interrupts_a_worker_lease_at_the_poll_boundary() {
 }
 
 #[test]
+fn successive_enqueues_wake_idle_workers_with_spare_capacity() {
+    let mut builder = Runtime::builder().parallelism(2).max_threads(3);
+    // An automatic monitor could rearm notifications and hide the lost wake.
+    builder.manual_monitor = true;
+    let rt = builder.build().unwrap();
+    let deadline = Instant::now() + TIMEOUT;
+    while rt.shared.state.lock().sleeping_workers != 3 {
+        assert!(Instant::now() < deadline, "workers did not park");
+        thread::yield_now();
+    }
+
+    let (entered, started) = mpsc::channel();
+    let mut held = Vec::new();
+    let mut releases = Vec::new();
+    for _ in 0..2 {
+        let entered = entered.clone();
+        let (release, released) = mpsc::channel();
+        releases.push(release);
+        held.push(rt.spawn(async move {
+            entered.send(()).unwrap();
+            // Keep this permit until both separately enqueued tasks start.
+            // The second enqueue must wake a worker that is already parked.
+            released.recv().unwrap();
+        }));
+        started.recv_timeout(TIMEOUT).unwrap();
+    }
+    for release in releases {
+        release.send(()).unwrap();
+    }
+    for handle in held {
+        futures::executor::block_on(handle).unwrap();
+    }
+    assert!(rt.shutdown_timeout(TIMEOUT));
+}
+
+#[test]
 fn targeted_wakes_fill_capacity_and_a_single_worker_can_drain_a_burst() {
     let rt = Runtime::builder()
         .parallelism(4)

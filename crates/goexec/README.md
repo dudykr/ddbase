@@ -88,6 +88,8 @@ variables. Queue publication and the final search before parking use paired
 memory fences so either the waiter sees work or its publisher sees the wake
 request. Ordinary task completion does not broadcast to idle threads; shutdown
 still wakes every parked worker.
+Wake requests are rearmed while execution capacity remains available, so
+successive enqueues can wake workers that were already parked.
 
 The common blocking-call path is TLS bookkeeping and atomic syscall-generation transitions:
 it does not allocate a task, enqueue work, wake another thread, or read a clock

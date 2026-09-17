@@ -532,6 +532,11 @@ impl Shared {
 
     fn wake_available(&self, state: &Scheduler) {
         if state.permits < self.parallelism {
+            // One publication can consume the wake request while other workers
+            // remain parked. Rearm before checking the queues so a later enqueue
+            // either appears in this search or notifies those idle workers.
+            self.wake_needed.store(true, Ordering::Release);
+            fence(Ordering::SeqCst);
             if let Some(&id) = state.returning.front() {
                 state.workers[id].worker.returned.notify_one();
             } else if self.has_ready(state) && state.sleeping_workers != 0 {
