@@ -48,6 +48,24 @@ task. `Runtime::block_on` submits its root future to a worker, so both the root
 future and its output must be `Send + 'static`; nested `block_on` on any goexec
 worker panics. Spawned futures and their outputs have the same bounds.
 
+`Handle::enter()` establishes a spawning context on an external thread; guards
+are thread-bound and must be dropped in reverse order. `Handle::try_current()`
+returns that context or the worker's runtime. `Handle::parallelism()` reports the
+configured execution permits, not the number of OS threads.
+
+`Handle::block_on()` drives a borrowed (possibly non-`Send`) future on its caller.
+It supports nested calls on workers, marking only the wait between polls as
+blocking and reacquiring the permit before polling again. Calling it from inside
+an explicit `blocking` boundary panics because that boundary may have already
+surrendered the worker's permit. Unlike `Runtime::block_on`, external callers poll
+on their own thread, outside the worker parallelism limit.
+
+Builder `on_thread_start`, `on_thread_park`, and `on_thread_stop` hooks run on
+workers outside scheduler locks. Start/park hooks have a worker context; stop
+hooks run after it is cleared. A panicking hook closes admission and requests
+cancellation. The park hook is followed by another queue check and does not
+necessarily result in a sleep. It does not observe user-marked blocking calls.
+
 `blocking(|| operation())` is synchronous. It can borrow local buffers and
 non-`Send` values, without moving the closure to another thread or requiring
 `'static`. Only the outermost nested boundary is tracked. Outside goexec it
@@ -136,11 +154,16 @@ Using a Tokio API which needs its runtime context on these workers is unsupporte
 
 ## Cancellation and shutdown
 
-`JoinHandle::abort()` requests cancellation at a poll boundary. An in-progress
+`JoinHandle::abort_handle()` returns a cloneable cancellation handle that can
+outlive the join handle. `JoinHandle::abort()` requests cancellation at a poll boundary. An in-progress
 syscall, CPU loop, or destructor is not forcibly interrupted. Completion can
 win a race with cancellation. A task's poll/destructor panic becomes a panic
 `JoinError`; a root panic is resumed on the `block_on` caller. As with other Rust
 runtimes, `panic = "abort"` and a double panic during unwinding cannot be isolated.
+
+`Runtime::shutdown()` cancels tasks and joins every worker and the monitor,
+including TLS destructors. It can wait indefinitely for user code to return and
+must not be called from a worker.
 
 Dropping `Runtime` closes admission, requests cancellation for all tasks and
 returns without joining workers. Pending tasks are woken to run cancellation.

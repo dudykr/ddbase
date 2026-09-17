@@ -81,6 +81,12 @@ impl<T> JoinHandle<T> {
         Self { receiver, abort }
     }
 
+    /// Obtain an independently owned cancellation handle. Dropping it does not
+    /// cancel the task; call `abort` explicitly.
+    pub fn abort_handle(&self) -> AbortHandle {
+        self.abort.clone()
+    }
+
     /// Request cancellation at a poll boundary. A running syscall or CPU loop
     /// is not interrupted; completion may win a race with cancellation.
     pub fn abort(&self) {

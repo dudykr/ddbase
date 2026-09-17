@@ -798,3 +798,162 @@ fn timed_shutdown_waits_for_native_thread_local_destructors() {
     assert!(!state.monitor_alive);
     assert_eq!(state.live_workers, 0);
 }
+
+#[test]
+fn entered_context_is_nested_and_restored_on_unwind() {
+    let a = Runtime::builder().parallelism(1).build().unwrap();
+    let b = Runtime::builder().parallelism(2).build().unwrap();
+    assert!(Handle::try_current().is_none());
+    {
+        let _a = a.handle().enter();
+        assert_eq!(Handle::current().parallelism(), 1);
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            let _b = b.handle().enter();
+            assert_eq!(Handle::current().parallelism(), 2);
+            panic!("leave nested context");
+        }));
+        assert!(result.is_err());
+        assert_eq!(Handle::current().parallelism(), 1);
+        assert_eq!(a.handle().block_on(spawn(async { 42 })).unwrap(), 42);
+    }
+    assert!(Handle::try_current().is_none());
+    a.shutdown();
+    b.shutdown();
+}
+
+#[test]
+fn borrowed_block_on_handles_nested_waits_with_one_permit() {
+    let rt = Runtime::builder().parallelism(1).build().unwrap();
+    let (completed, done) = mpsc::channel();
+    let root = rt.spawn(async move {
+        let handle = Handle::current();
+        let value = Rc::new(Cell::new(1));
+        handle.block_on(async {
+            let child = spawn(async {
+                Handle::current().block_on(async { spawn(async { 40 }).await.unwrap() })
+            });
+            value.set(value.get() + child.await.unwrap());
+            // A nested block_on driven directly in the caller cannot use
+            // futures::executor::block_on, which rejects executor re-entry.
+            handle.block_on(async { yield_now().await });
+            value.set(value.get() + 1);
+        });
+        assert_eq!(value.get(), 42);
+        assert_eq!(handle.metrics().active_permits, 1);
+        completed.send(()).unwrap();
+    });
+    done.recv_timeout(TIMEOUT).unwrap();
+    futures::executor::block_on(root).unwrap();
+    assert!(rt.metrics().handoffs > 0);
+    rt.shutdown();
+}
+
+#[test]
+fn borrowed_block_on_does_not_lose_synchronous_wakes() {
+    let rt = Runtime::builder().parallelism(1).build().unwrap();
+    let value = Rc::new(Cell::new(0));
+    rt.handle().block_on(async {
+        for _ in 0..1000 {
+            yield_now().await;
+            value.set(value.get() + 1);
+        }
+    });
+    assert_eq!(value.get(), 1000);
+    rt.shutdown();
+}
+
+#[test]
+fn block_on_rejects_polling_without_a_permit_in_a_blocking_region() {
+    let rt = Runtime::builder().parallelism(1).build().unwrap();
+    rt.block_on(async {
+        let handle = Handle::current();
+        assert!(catch_unwind(AssertUnwindSafe(|| {
+            blocking(|| handle.block_on(async {}))
+        }))
+        .is_err());
+        assert_eq!(handle.block_on(async { 42 }), 42);
+    });
+    rt.shutdown();
+}
+
+#[test]
+fn independent_abort_handle_cancels_a_detached_task() {
+    struct Dropped(mpsc::Sender<()>);
+    impl Drop for Dropped {
+        fn drop(&mut self) {
+            self.0.send(()).unwrap();
+        }
+    }
+    let rt = Runtime::builder().parallelism(1).build().unwrap();
+    let (dropped, done) = mpsc::channel();
+    let guard = Dropped(dropped);
+    let task = rt.spawn(async move {
+        let _guard = guard;
+        std::future::pending::<()>().await;
+    });
+    let abort = task.abort_handle();
+    drop(task);
+    abort.abort();
+    done.recv_timeout(TIMEOUT).unwrap();
+    rt.shutdown();
+}
+
+#[test]
+fn hooks_can_reenter_metrics_and_shutdown_joins_thread_cleanup() {
+    let handle_slot = Arc::new(Mutex::new(None::<Handle>));
+    let starts = Arc::new(AtomicUsize::new(0));
+    let parks = Arc::new(AtomicUsize::new(0));
+    let stops = Arc::new(AtomicUsize::new(0));
+    let rt = Runtime::builder()
+        .parallelism(2)
+        .on_thread_start({
+            let starts = starts.clone();
+            move || {
+                Handle::current().metrics();
+                starts.fetch_add(1, Ordering::SeqCst);
+            }
+        })
+        .on_thread_park({
+            let parks = parks.clone();
+            move || {
+                Handle::current().metrics();
+                parks.fetch_add(1, Ordering::SeqCst);
+            }
+        })
+        .on_thread_stop({
+            let stops = stops.clone();
+            let handle_slot = handle_slot.clone();
+            move || {
+                assert!(Handle::try_current().is_none());
+                handle_slot.lock().as_ref().unwrap().metrics();
+                stops.fetch_add(1, Ordering::SeqCst);
+            }
+        })
+        .build()
+        .unwrap();
+    let handle = rt.handle();
+    *handle_slot.lock() = Some(handle.clone());
+    assert_eq!(rt.block_on(async { 1 }), 1);
+    let (joined, done) = mpsc::channel();
+    thread::spawn(move || {
+        rt.shutdown();
+        joined.send(()).unwrap();
+    });
+    done.recv_timeout(TIMEOUT).unwrap();
+    assert_eq!(starts.load(Ordering::SeqCst), 3);
+    assert_eq!(stops.load(Ordering::SeqCst), 3);
+    assert!(parks.load(Ordering::SeqCst) > 0);
+    assert_eq!(handle.metrics().live_threads, 0);
+    assert_eq!(handle.metrics().tasks, 0);
+    *handle_slot.lock() = None;
+}
+
+#[test]
+fn a_panicking_start_hook_closes_without_leaking_workers() {
+    let rt = Runtime::builder()
+        .parallelism(1)
+        .on_thread_start(|| panic!("start hook failed"))
+        .build()
+        .unwrap();
+    assert!(rt.shutdown_timeout(TIMEOUT));
+}
