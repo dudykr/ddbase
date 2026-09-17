@@ -127,6 +127,66 @@ fn cancellation_and_shutdown_destroy_pending_futures_once() {
 }
 
 #[test]
+fn abort_before_first_poll_does_not_run_the_future() {
+    let rt = Runtime::builder().parallelism(1).build().unwrap();
+    let (entered, started) = mpsc::channel();
+    let (release, released) = mpsc::channel();
+    let busy = rt.spawn(async move {
+        entered.send(()).unwrap();
+        // Deliberately hold the sole permit until the queued task is aborted.
+        released.recv_timeout(TIMEOUT).unwrap();
+    });
+    started.recv_timeout(TIMEOUT).unwrap();
+    let drops = Arc::new(AtomicUsize::new(0));
+    let guard = Dropped(drops.clone());
+    let task = rt.spawn(async move {
+        let _guard = guard;
+        panic!("an already-aborted future was polled");
+    });
+    task.abort();
+    release.send(()).unwrap();
+    futures::executor::block_on(busy).unwrap();
+    assert!(futures::executor::block_on(task)
+        .unwrap_err()
+        .is_cancelled());
+    assert_eq!(drops.load(Ordering::SeqCst), 1);
+    assert!(rt.shutdown_timeout(TIMEOUT));
+}
+
+#[test]
+fn abort_wakes_a_parked_task_after_many_self_wakes() {
+    let rt = Runtime::builder().parallelism(1).build().unwrap();
+    let (started, running) = mpsc::channel();
+    let (dropped, destroyed) = mpsc::channel();
+    struct NotifyDrop(mpsc::Sender<()>);
+    impl Drop for NotifyDrop {
+        fn drop(&mut self) {
+            self.0.send(()).unwrap();
+        }
+    }
+    let task = rt.spawn(async move {
+        let _guard = NotifyDrop(dropped);
+        for _ in 0..1024 {
+            goexec::yield_now().await;
+        }
+        started.send(()).unwrap();
+        std::future::pending::<()>().await;
+    });
+    running.recv_timeout(TIMEOUT).unwrap();
+    // With one permit this sentinel can run only after the task's final poll
+    // returned Pending. The task now depends entirely on its abort waker.
+    rt.block_on(async {});
+    // The original abort waker must survive repeated polls, even when the
+    // task stops waking itself.
+    task.abort();
+    destroyed.recv_timeout(TIMEOUT).unwrap();
+    assert!(futures::executor::block_on(task)
+        .unwrap_err()
+        .is_cancelled());
+    assert!(rt.shutdown_timeout(TIMEOUT));
+}
+
+#[test]
 fn abort_does_not_drop_a_buffer_borrowed_by_a_running_call() {
     let rt = Runtime::builder().parallelism(1).build().unwrap();
     let drops = Arc::new(AtomicUsize::new(0));

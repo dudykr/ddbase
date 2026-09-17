@@ -1,16 +1,16 @@
 use std::{
     any::Any,
     fmt,
-    future::Future,
+    future::{pending, Future, Pending},
     panic::{catch_unwind, AssertUnwindSafe},
     pin::Pin,
     sync::Arc,
-    task::{Context, Poll},
+    task::{Context, Poll, Waker},
 };
 
 use futures::{
     channel::oneshot,
-    future::{AbortHandle, Abortable},
+    future::{AbortHandle, AbortRegistration, Abortable},
 };
 
 use crate::runtime::{Shared, TaskId};
@@ -108,7 +108,9 @@ impl<T> fmt::Debug for JoinHandle<T> {
 // destructor panics without unsafe projection or allowing a destructor to
 // escape into async-task's abort-on-destructor-panic boundary.
 pub(crate) struct TaskFuture<F: Future> {
-    future: Option<Pin<Box<Abortable<F>>>>,
+    future: Option<Pin<Box<F>>>,
+    cancellation: Abortable<Pending<()>>,
+    cancellation_waker: Option<Waker>,
     sender: Option<oneshot::Sender<Result<F::Output, JoinError>>>,
     shared: Arc<Shared>,
     id: TaskId,
@@ -116,13 +118,16 @@ pub(crate) struct TaskFuture<F: Future> {
 
 impl<F: Future> TaskFuture<F> {
     pub(crate) fn new(
-        future: Abortable<F>,
+        future: F,
+        registration: AbortRegistration,
         sender: oneshot::Sender<Result<F::Output, JoinError>>,
         shared: Arc<Shared>,
         id: TaskId,
     ) -> Self {
         Self {
             future: Some(Box::pin(future)),
+            cancellation: Abortable::new(pending(), registration),
+            cancellation_waker: None,
             sender: Some(sender),
             shared,
             id,
@@ -150,6 +155,10 @@ impl<F: Future> Future for TaskFuture<F> {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        if self.cancellation.is_aborted() {
+            self.finish(Err(JoinError::cancelled()));
+            return Poll::Ready(());
+        }
         let result = catch_unwind(AssertUnwindSafe(|| {
             self.future
                 .as_mut()
@@ -158,9 +167,30 @@ impl<F: Future> Future for TaskFuture<F> {
                 .poll(cx)
         }));
         let result = match result {
-            Ok(Poll::Pending) => return Poll::Pending,
-            Ok(Poll::Ready(Ok(value))) => Ok(value),
-            Ok(Poll::Ready(Err(_))) => Err(JoinError::cancelled()),
+            Ok(Poll::Pending) => {
+                // The async-task waker normally stays the same across polls,
+                // including worker migration. Keep its abort registration
+                // instead of taking AtomicWaker's registration lock each time.
+                // Only abort consumes that registration, and the aborted bit
+                // remains set permanently afterwards.
+                // Re-polling Abortable on a new waker preserves its existing
+                // register/check handshake with a concurrent abort.
+                let cancelled = if self
+                    .cancellation_waker
+                    .as_ref()
+                    .is_some_and(|waker| waker.will_wake(cx.waker()))
+                {
+                    self.cancellation.is_aborted()
+                } else {
+                    self.cancellation_waker = Some(cx.waker().clone());
+                    Pin::new(&mut self.cancellation).poll(cx).is_ready()
+                };
+                if !cancelled {
+                    return Poll::Pending;
+                }
+                Err(JoinError::cancelled())
+            }
+            Ok(Poll::Ready(value)) => Ok(value),
             Err(panic) => Err(JoinError::panicked(panic)),
         };
         self.finish(result);

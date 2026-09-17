@@ -17,7 +17,7 @@ use async_task::Runnable;
 use crossbeam_deque::{Injector, Steal, Stealer, Worker as LocalQueue};
 use futures::{
     channel::oneshot,
-    future::{poll_fn, AbortHandle, Abortable},
+    future::{poll_fn, AbortHandle},
 };
 use parking_lot::{Condvar, Mutex};
 
@@ -445,12 +445,7 @@ impl Shared {
             shard.tasks.insert(index, abort);
             TaskId { registry, index }
         };
-        let task = TaskFuture::new(
-            Abortable::new(future, registration),
-            sender,
-            self.clone(),
-            id,
-        );
+        let task = TaskFuture::new(future, registration, sender, self.clone(), id);
         let scheduler = self.clone();
         let (runnable, task) = async_task::spawn(task, move |runnable| scheduler.enqueue(runnable));
         task.detach();

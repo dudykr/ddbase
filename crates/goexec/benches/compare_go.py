@@ -41,6 +41,7 @@ def main():
     parser.add_argument("--rust-binary", type=Path, help="use an already built compare harness")
     parser.add_argument("--baseline", type=Path, help="older compare harness with the same CLI")
     parser.add_argument("--go-binary", type=Path, help="use an already built Go companion")
+    parser.add_argument("--engines", help="comma-separated goexec,go,baseline (default: all available)")
     parser.add_argument("--parallelism", default="1,4,16")
     parser.add_argument("--cases", default=",".join(OPERATIONS))
     parser.add_argument("--repeats", type=int, default=5)
@@ -53,6 +54,12 @@ def main():
         parser.error("parallelism, repeats and scale must be positive")
     if any(case not in OPERATIONS for case in cases):
         parser.error("unknown case")
+    selected = args.engines.split(",") if args.engines is not None else None
+    if selected is not None:
+        if any(label not in ("goexec", "go", "baseline") for label in selected):
+            parser.error("unknown engine")
+        if "baseline" in selected and args.baseline is None:
+            parser.error("the baseline engine requires --baseline")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     rust_binary = args.rust_binary
@@ -91,6 +98,8 @@ def main():
     engines = [("goexec", rust_binary, "Goexec"), ("go", rust_binary, "Go")]
     if args.baseline:
         engines.append(("baseline", args.baseline.resolve(), "Goexec"))
+    if selected is not None:
+        engines = [engine for engine in engines if engine[0] in selected]
     rng = random.Random(0)
     rows = []
     with (output / "runs.csv").open("w", newline="") as raw, (output / "progress.log").open("w") as log:

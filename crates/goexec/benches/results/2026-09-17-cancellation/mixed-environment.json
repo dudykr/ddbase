@@ -1,0 +1,34 @@
+{
+  "started_at": "2026-09-17T03:47:52.328364+00:00",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "cpu_count": 16,
+  "go": "go version go1.25.1 darwin/arm64",
+  "rustc": "rustc 1.81.0-nightly (506985649 2024-07-20)",
+  "revision": "79d7a27d545ee3435b18fdbbe597e0b3eff22fdd",
+  "working_tree": " M crates/goexec/README.md\n M crates/goexec/benches/compare_go.py\n M crates/goexec/src/runtime.rs\n M crates/goexec/src/runtime/tests.rs\n M crates/goexec/src/task.rs\n M crates/goexec/tests/executor.rs\n?? crates/goexec/benches/results/\n",
+  "options": {
+    "output": "target/goexec-comparison/cancellation-mixed",
+    "rust_binary": "target/release/deps/compare-1051cb4cc48185bd",
+    "baseline": "target/goexec-comparison/compare-before",
+    "go_binary": "target/goexec-comparison/lease-results/go-scheduler",
+    "engines": "goexec,baseline",
+    "parallelism": "1,4,16",
+    "cases": "Mixed",
+    "repeats": 5,
+    "scale": 4.0,
+    "latency": false
+  },
+  "environment": {
+    "GOGC": null,
+    "GOMEMLIMIT": null,
+    "GODEBUG": null,
+    "GOEXPERIMENT": null,
+    "RUSTFLAGS": null
+  },
+  "order_seed": 0,
+  "binaries_sha256": {
+    "goexec": "26ee1de909ce21b0f80e658adf3986de9c7ac5a97094d472fdb32b8a8ab14f75",
+    "go": "67e2c43ff1db52f1341252ee0ce50c170488d0a54c0e212614c06a0af8da3ab6",
+    "baseline": "36c48260ad89d0908b250ea92ce2aaeb3d3fa912d578d3ef16fcb5a223726399"
+  }
+}
