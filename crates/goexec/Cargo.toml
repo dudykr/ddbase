@@ -14,7 +14,9 @@ loom = []
 
 [dependencies]
 async-task = { workspace = true }
+crossbeam-deque = { workspace = true }
 futures = { workspace = true }
+parking_lot = { workspace = true }
 
 [dev-dependencies]
 loom = { workspace = true }

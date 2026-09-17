@@ -13,7 +13,7 @@ use futures::{
     future::{AbortHandle, Abortable},
 };
 
-use crate::runtime::Shared;
+use crate::runtime::{Shared, TaskId};
 
 /// A task was cancelled or panicked.
 pub struct JoinError {
@@ -111,7 +111,7 @@ pub(crate) struct TaskFuture<F: Future> {
     future: Option<Pin<Box<Abortable<F>>>>,
     sender: Option<oneshot::Sender<Result<F::Output, JoinError>>>,
     shared: Arc<Shared>,
-    id: u64,
+    id: TaskId,
 }
 
 impl<F: Future> TaskFuture<F> {
@@ -119,7 +119,7 @@ impl<F: Future> TaskFuture<F> {
         future: Abortable<F>,
         sender: oneshot::Sender<Result<F::Output, JoinError>>,
         shared: Arc<Shared>,
-        id: u64,
+        id: TaskId,
     ) -> Self {
         Self {
             future: Some(Box::pin(future)),

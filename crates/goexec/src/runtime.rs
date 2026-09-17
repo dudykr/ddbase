@@ -4,17 +4,22 @@ use std::{
     future::Future,
     io,
     panic::{catch_unwind, resume_unwind, AssertUnwindSafe},
-    sync::{Arc, Condvar, Mutex},
+    sync::{
+        atomic::{fence, AtomicBool, AtomicU64, AtomicUsize, Ordering},
+        Arc,
+    },
     task::Poll,
     thread,
     time::{Duration, Instant},
 };
 
 use async_task::Runnable;
+use crossbeam_deque::{Injector, Steal, Stealer, Worker as LocalQueue};
 use futures::{
     channel::oneshot,
     future::{poll_fn, AbortHandle, Abortable},
 };
+use parking_lot::{Condvar, Mutex};
 
 use crate::{
     state::CallState,
@@ -29,11 +34,15 @@ struct WorkerContext {
     shared: Arc<Shared>,
     worker: Arc<Worker>,
     depth: Cell<usize>,
+    local: LocalQueue<Runnable>,
 }
 
 struct Worker {
     id: usize,
     call: CallState,
+    returned: Condvar,
+    stealer: Stealer<Runnable>,
+    polls: AtomicU64,
 }
 
 struct WorkerEntry {
@@ -100,7 +109,17 @@ impl Builder {
             max_threads,
             handoff_delay: self.handoff_delay,
             state: Mutex::new(Scheduler::default()),
+            ready: Injector::new(),
+            registry: (0..self.parallelism)
+                .map(|_| Mutex::new(Registry::default()))
+                .collect(),
+            next_registry: AtomicUsize::new(0),
+            closed: AtomicBool::new(false),
+            returning: AtomicBool::new(false),
+            wake_needed: AtomicBool::new(false),
             changed: Condvar::new(),
+            work_available: Condvar::new(),
+            monitor_wake: Condvar::new(),
             #[cfg(test)]
             manual_monitor: self.manual_monitor,
             #[cfg(test)]
@@ -108,7 +127,7 @@ impl Builder {
         });
 
         let startup = (|| {
-            let mut state = shared.state.lock().unwrap();
+            let mut state = shared.state.lock();
             for _ in 0..initial {
                 shared.start_worker(&mut state)?;
             }
@@ -197,18 +216,13 @@ impl Runtime {
         assert_outside_worker("shutdown_timeout");
         let start = Instant::now();
         self.shared.close();
-        let mut state = self.shared.state.lock().unwrap();
+        let mut state = self.shared.state.lock();
         while state.live_workers != 0 || state.monitor_alive {
             let remaining = timeout.saturating_sub(start.elapsed());
             if remaining.is_zero() {
                 return false;
             }
-            state = self
-                .shared
-                .changed
-                .wait_timeout(state, remaining)
-                .unwrap()
-                .0;
+            self.shared.changed.wait_for(&mut state, remaining);
         }
         true
     }
@@ -243,7 +257,8 @@ impl Handle {
     }
 }
 
-/// A snapshot. Counts exclude the monitor thread.
+/// A snapshot. Counts exclude the monitor thread. Queue/task counts are
+/// approximate across independently changing queues and registries.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Metrics {
     /// Worker threads not yet joined, including spares and blocked workers.
@@ -253,7 +268,7 @@ pub struct Metrics {
     /// Workers currently owning an execution permit (including unreclaimed
     /// calls).
     pub active_permits: usize,
-    /// Runnable tasks waiting in the shared queue.
+    /// Runnable tasks waiting in the injection and worker-local queues.
     pub queued_tasks: usize,
     /// Tasks that have not yet been completely destroyed.
     pub tasks: usize,
@@ -346,29 +361,35 @@ fn assert_outside_worker(operation: &str) {
     });
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct TaskId {
+    registry: usize,
+    index: u64,
+}
+
+#[derive(Default)]
+struct Registry {
+    tasks: HashMap<u64, AbortHandle>,
+    next_id: u64,
+}
+
 #[derive(Default)]
 struct Scheduler {
-    ready: VecDeque<Runnable>,
-    tasks: HashMap<u64, AbortHandle>,
-    next_task: u64,
     closed: bool,
     workers: Vec<WorkerEntry>,
     threads: Vec<thread::JoinHandle<()>>,
     live_workers: usize,
     monitor_alive: bool,
+    monitor_parked: bool,
+    sleeping_workers: usize,
     permits: usize,
     polling: usize,
     returning: VecDeque<usize>,
     handoffs: u64,
     capacity_delays: u64,
     spawn_failures: u64,
+    #[cfg(test)]
     polls: u64,
-}
-
-impl Scheduler {
-    fn finished(&self) -> bool {
-        self.closed && self.tasks.is_empty() && self.ready.is_empty() && self.polling == 0
-    }
 }
 
 pub(crate) struct Shared {
@@ -376,11 +397,19 @@ pub(crate) struct Shared {
     max_threads: usize,
     handoff_delay: Duration,
     state: Mutex<Scheduler>,
+    ready: Injector<Runnable>,
+    registry: Vec<Mutex<Registry>>,
+    next_registry: AtomicUsize,
+    closed: AtomicBool,
+    returning: AtomicBool,
+    wake_needed: AtomicBool,
     changed: Condvar,
+    work_available: Condvar,
+    monitor_wake: Condvar,
     #[cfg(test)]
     manual_monitor: bool,
     #[cfg(test)]
-    fail_spawn: std::sync::atomic::AtomicBool,
+    fail_spawn: AtomicBool,
 }
 
 impl Shared {
@@ -392,20 +421,29 @@ impl Shared {
         let (sender, receiver) = oneshot::channel();
         let (abort, registration) = AbortHandle::new_pair();
         let join = JoinHandle::new(receiver, abort.clone());
+        let registry = CURRENT
+            .with(|current| {
+                current
+                    .borrow()
+                    .as_ref()
+                    .filter(|c| Arc::ptr_eq(&c.shared, self))
+                    .map(|c| c.worker.id)
+            })
+            .unwrap_or_else(|| self.next_registry.fetch_add(1, Ordering::Relaxed))
+            % self.registry.len();
         let id = {
-            let mut state = self.state.lock().unwrap();
-            if state.closed {
-                drop(state);
+            let mut shard = self.registry[registry].lock();
+            // Admission and removal share this shard lock. Shutdown publishes
+            // closed before checking shards, so registration cannot be missed.
+            if self.closed.load(Ordering::Acquire) {
+                drop(shard);
                 let _ = sender.send(Err(JoinError::cancelled()));
                 return join;
             }
-            let id = state.next_task;
-            state.next_task = state
-                .next_task
-                .checked_add(1)
-                .expect("task ID space exhausted");
-            state.tasks.insert(id, abort);
-            id
+            let index = shard.next_id;
+            shard.next_id = index.checked_add(1).expect("task ID space exhausted");
+            shard.tasks.insert(index, abort);
+            TaskId { registry, index }
         };
         let task = TaskFuture::new(
             Abortable::new(future, registration),
@@ -421,65 +459,148 @@ impl Shared {
     }
 
     fn enqueue(&self, runnable: Runnable) {
-        self.state.lock().unwrap().ready.push_back(runnable);
-        self.changed.notify_all();
+        CURRENT.with(|current| {
+            let current = current.borrow();
+            if let Some(context) = current.as_ref().filter(|c| std::ptr::eq(&*c.shared, self)) {
+                context.local.push(runnable);
+            } else {
+                self.ready.push(runnable);
+            }
+        });
+        self.notify_published_work();
     }
 
-    pub(crate) fn task_finished(&self, id: u64) {
-        // Drop AbortHandle outside the scheduler lock: its AtomicWaker may own
-        // the last reference to a task whose destructor calls back into us.
-        let removed = self.state.lock().unwrap().tasks.remove(&id);
+    fn notify_published_work(&self) {
+        // Pair queue publication with the waiter's signal-before-search fence.
+        // No shared counter/RMW is needed when every worker is already busy.
+        fence(Ordering::SeqCst);
+        if self.wake_needed.load(Ordering::Acquire)
+            && self.wake_needed.swap(false, Ordering::AcqRel)
+        {
+            let mut state = self.state.lock();
+            self.wake_monitor(&mut state);
+            self.wake_available(&state);
+        }
+    }
+
+    pub(crate) fn task_finished(&self, id: TaskId) {
+        // AbortHandle's waker can own a task whose destructor reenters us.
+        let removed = self.registry[id.registry].lock().tasks.remove(&id.index);
         drop(removed);
-        self.changed.notify_all();
+        if self.closed.load(Ordering::Acquire) {
+            let state = self.state.lock();
+            self.notify_shutdown(&state);
+        }
+    }
+
+    fn task_count(&self) -> usize {
+        self.registry.iter().map(|r| r.lock().tasks.len()).sum()
+    }
+
+    fn has_ready(&self, state: &Scheduler) -> bool {
+        !self.ready.is_empty() || state.workers.iter().any(|w| !w.worker.stealer.is_empty())
+    }
+
+    fn finished(&self, state: &Scheduler) -> bool {
+        state.closed
+            && state.polling == 0
+            && !self.has_ready(state)
+            && self.registry.iter().all(|r| r.lock().tasks.is_empty())
     }
 
     fn close(&self) {
-        let tasks = {
-            let mut state = self.state.lock().unwrap();
+        {
+            let mut state = self.state.lock();
             if state.closed {
                 return;
             }
+            self.closed.store(true, Ordering::Release);
             state.closed = true;
-            state.tasks.values().cloned().collect::<Vec<_>>()
-        };
-        // Abort may synchronously invoke the task's scheduling callback.
+        }
+        let tasks: Vec<_> = self
+            .registry
+            .iter()
+            .flat_map(|r| r.lock().tasks.values().cloned().collect::<Vec<_>>())
+            .collect();
         for task in tasks {
             task.abort();
         }
+        self.work_available.notify_all();
+        self.monitor_wake.notify_one();
         self.changed.notify_all();
     }
 
+    fn wake_available(&self, state: &Scheduler) {
+        if state.permits < self.parallelism {
+            if let Some(&id) = state.returning.front() {
+                state.workers[id].worker.returned.notify_one();
+            } else if self.has_ready(state) && state.sleeping_workers != 0 {
+                self.work_available.notify_one();
+            }
+        }
+    }
+
+    fn wake_monitor(&self, state: &mut Scheduler) {
+        if state.monitor_parked {
+            state.monitor_parked = false;
+            self.monitor_wake.notify_one();
+        }
+    }
+
+    fn notify_shutdown(&self, state: &Scheduler) {
+        #[cfg(test)]
+        self.changed.notify_all();
+        if state.closed {
+            self.changed.notify_all();
+            self.monitor_wake.notify_one();
+            if self.finished(state) {
+                self.work_available.notify_all();
+            }
+        }
+    }
+
     fn metrics(&self) -> Metrics {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock();
         Metrics {
             live_threads: state.live_workers,
             spawned_threads: state.workers.len(),
             active_permits: state.permits,
-            queued_tasks: state.ready.len(),
-            tasks: state.tasks.len(),
+            queued_tasks: self.ready.len()
+                + state
+                    .workers
+                    .iter()
+                    .map(|w| w.worker.stealer.len())
+                    .sum::<usize>(),
+            tasks: self.task_count(),
             handoffs: state.handoffs,
             capacity_delays: state.capacity_delays,
             thread_spawn_failures: state.spawn_failures,
-            polls: state.polls,
+            polls: state
+                .workers
+                .iter()
+                .map(|w| w.worker.polls.load(Ordering::Relaxed))
+                .sum(),
         }
     }
 
     fn start_worker(self: &Arc<Self>, state: &mut Scheduler) -> io::Result<()> {
         #[cfg(test)]
-        if self.fail_spawn.load(std::sync::atomic::Ordering::Relaxed) {
+        if self.fail_spawn.load(Ordering::Relaxed) {
             return Err(io::Error::other("injected thread spawn failure"));
         }
+        let local = LocalQueue::new_fifo();
         let worker = Arc::new(Worker {
             id: state.workers.len(),
             call: CallState::new(),
+            returned: Condvar::new(),
+            stealer: local.stealer(),
+            polls: AtomicU64::new(0),
         });
         let shared = self.clone();
         let runner = worker.clone();
-        // The new thread cannot take the scheduler mutex until its descriptor
-        // and live count have been installed by this caller.
         let thread = thread::Builder::new()
             .name(format!("goexec-worker-{}", worker.id))
-            .spawn(move || shared.worker(runner))?;
+            .spawn(move || shared.worker(runner, local))?;
         state.threads.push(thread);
         state.workers.push(WorkerEntry {
             worker,
@@ -489,101 +610,190 @@ impl Shared {
         Ok(())
     }
 
-    fn worker(self: Arc<Self>, worker: Arc<Worker>) {
+    fn next_runnable(
+        &self,
+        local: &LocalQueue<Runnable>,
+        stealers: &[Stealer<Runnable>],
+        global_first: bool,
+    ) -> Option<(Runnable, bool)> {
+        if global_first {
+            if let Steal::Success(task) = self.ready.steal_batch_and_pop(local) {
+                return Some((task, true));
+            }
+        }
+        if let Some(task) = local.pop() {
+            return Some((task, false));
+        }
+        if let Steal::Success(task) = self.ready.steal_batch_and_pop(local) {
+            return Some((task, true));
+        }
+        for stealer in stealers {
+            if let Steal::Success(task) = stealer.steal_batch_and_pop(local) {
+                return Some((task, true));
+            }
+        }
+        None
+    }
+
+    fn worker(self: Arc<Self>, worker: Arc<Worker>, local: LocalQueue<Runnable>) {
         CURRENT.with(|current| {
             *current.borrow_mut() = Some(WorkerContext {
                 shared: self.clone(),
                 worker: worker.clone(),
                 depth: Cell::new(0),
+                local,
             });
         });
+        CURRENT.with(|current| {
+            self.run_worker(&worker, &current.borrow().as_ref().unwrap().local);
+        });
+        CURRENT.with(|current| {
+            current.borrow_mut().take();
+        });
+    }
+
+    fn run_worker(&self, worker: &Worker, local: &LocalQueue<Runnable>) {
+        let mut state = self.state.lock();
         loop {
-            let runnable = {
-                let mut state = self.state.lock().unwrap();
-                loop {
-                    if state.finished() {
-                        // The monitor joins native threads, including any user
-                        // TLS destructors, before publishing shutdown completion.
-                        CURRENT.with(|current| {
-                            current.borrow_mut().take();
-                        });
-                        self.changed.notify_all();
-                        return;
-                    }
-                    if state.permits < self.parallelism && state.returning.is_empty() {
-                        if let Some(runnable) = state.ready.pop_front() {
-                            state.permits += 1;
-                            state.polling += 1;
-                            state.workers[worker.id].busy = true;
-                            break runnable;
+            if self.finished(&state) {
+                return;
+            }
+            if state.permits < self.parallelism && state.returning.is_empty() {
+                let stealers: Vec<_> = (1..state.workers.len())
+                    .map(|offset| {
+                        state.workers[(worker.id + offset) % state.workers.len()]
+                            .worker
+                            .stealer
+                            .clone()
+                    })
+                    .collect();
+                if let Some((mut runnable, _)) = self.next_runnable(local, &stealers, true) {
+                    state.permits += 1;
+                    state.polling += 1;
+                    state.workers[worker.id].busy = true;
+                    self.wake_monitor(&mut state);
+                    self.wake_available(&state);
+                    drop(state);
+                    let mut polls = 0;
+                    loop {
+                        let _ = catch_unwind(AssertUnwindSafe(|| runnable.run()));
+                        worker.polls.fetch_add(1, Ordering::Relaxed);
+                        polls += 1;
+                        // A permit belongs to this worker across a bounded run
+                        // of polls. Returning callers take it at the next poll
+                        // boundary; closed admission also forces a checkpoint.
+                        if polls == 64
+                            || self.returning.load(Ordering::SeqCst)
+                            || self.closed.load(Ordering::Acquire)
+                        {
+                            break;
                         }
+                        let Some((next, transferred)) =
+                            self.next_runnable(local, &stealers, polls % 16 == 0)
+                        else {
+                            break;
+                        };
+                        // A fast batch steal publishes work into a different
+                        // deque without holding the scheduler lock. A waiter
+                        // may have seen neither queue during the transfer.
+                        if transferred {
+                            self.notify_published_work();
+                        }
+                        runnable = next;
                     }
-                    state = self.changed.wait(state).unwrap();
+                    state = self.state.lock();
+                    state.permits -= 1;
+                    state.polling -= 1;
+                    #[cfg(test)]
+                    {
+                        state.polls += polls;
+                    }
+                    state.workers[worker.id].busy = false;
+                    self.notify_shutdown(&state);
+                    continue;
                 }
-            };
-            // TaskFuture catches user poll/drop panics. This final boundary also
-            // prevents an unexpected unwind from losing an execution permit.
-            let _ = catch_unwind(AssertUnwindSafe(|| runnable.run()));
-            let mut state = self.state.lock().unwrap();
-            state.permits -= 1;
-            state.polling -= 1;
-            state.polls += 1;
-            state.workers[worker.id].busy = false;
-            self.changed.notify_all();
+            }
+            self.wake_available(&state);
+            state.sleeping_workers += 1;
+            if state.permits < self.parallelism || state.monitor_parked {
+                self.wake_needed.store(true, Ordering::Release);
+                fence(Ordering::SeqCst);
+            }
+            // Either the final queue search sees work, or its publisher sees
+            // wake_needed and takes this mutex to notify after we park.
+            if state.permits < self.parallelism
+                && state.returning.is_empty()
+                && self.has_ready(&state)
+            {
+                state.sleeping_workers -= 1;
+                drop(state);
+                thread::yield_now();
+                state = self.state.lock();
+                continue;
+            }
+            self.work_available.wait(&mut state);
+            state.sleeping_workers -= 1;
         }
     }
 
     fn return_from_call(&self, worker: &Worker, ticket: u64) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock();
         state.returning.push_back(worker.id);
-        self.changed.notify_all();
+        self.returning.store(true, Ordering::SeqCst);
+        self.wake_monitor(&mut state);
+        self.notify_shutdown(&state);
         while state.permits == self.parallelism || state.returning.front() != Some(&worker.id) {
-            state = self.changed.wait(state).unwrap();
+            worker.returned.wait(&mut state);
         }
         state.returning.pop_front();
+        self.returning
+            .store(!state.returning.is_empty(), Ordering::SeqCst);
         state.permits += 1;
         worker.call.resume(ticket);
-        self.changed.notify_all();
+        self.wake_available(&state);
+        self.notify_shutdown(&state);
     }
 
     fn monitor(self: Arc<Self>) {
         let mut observations = Vec::new();
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock();
         loop {
-            if state.finished() {
+            if self.finished(&state) {
                 let threads = std::mem::take(&mut state.threads);
                 drop(state);
                 for thread in threads {
-                    // Never join with the scheduler mutex held: other workers
-                    // still need it to observe shutdown and leave their loops.
                     let _ = thread.join();
-                    let mut state = self.state.lock().unwrap();
+                    let mut state = self.state.lock();
                     state.live_workers -= 1;
                     self.changed.notify_all();
                 }
-                let mut state = self.state.lock().unwrap();
+                let mut state = self.state.lock();
                 state.monitor_alive = false;
                 self.changed.notify_all();
                 return;
             }
             #[cfg(test)]
             if self.manual_monitor {
-                state = self.changed.wait(state).unwrap();
+                self.monitor_wake.wait(&mut state);
                 continue;
             }
-            if state.polling == 0 && state.ready.is_empty() {
+            if !self.has_ready(&state) && state.returning.is_empty() {
                 observations.clear();
-                state = self.changed.wait(state).unwrap();
+                state.monitor_parked = true;
+                self.wake_needed.store(true, Ordering::Release);
+                fence(Ordering::SeqCst);
+                if !self.has_ready(&state) {
+                    self.monitor_wake.wait(&mut state);
+                }
+                state.monitor_parked = false;
                 continue;
             }
             self.scan(&mut state, &mut observations, Instant::now());
-            // Notifications can trigger an earlier inspection; eligibility still
-            // uses elapsed time for the *same* observed syscall generation.
-            state = self
-                .changed
-                .wait_timeout(state, self.handoff_delay)
-                .unwrap()
-                .0;
+            self.monitor_wake.wait_while_for(
+                &mut state,
+                |state| !self.finished(state),
+                self.handoff_delay,
+            );
         }
     }
 
@@ -609,13 +819,10 @@ impl Shared {
             };
             if now.saturating_duration_since(since) < self.handoff_delay
                 || state.permits < self.parallelism
-                || (state.ready.is_empty() && state.returning.is_empty())
+                || (!self.has_ready(state) && state.returning.is_empty())
             {
                 continue;
             }
-
-            // A returning caller already supplies a replacement OS thread. For
-            // queued tasks, reserve a spare before changing permit ownership.
             if state.returning.is_empty() && state.workers.iter().all(|entry| entry.busy) {
                 if state.live_workers == self.max_threads {
                     state.capacity_delays += 1;
@@ -629,7 +836,8 @@ impl Shared {
             if worker.call.detach(ticket) {
                 state.permits -= 1;
                 state.handoffs += 1;
-                self.changed.notify_all();
+                self.wake_available(state);
+                self.notify_shutdown(state);
             }
         }
     }

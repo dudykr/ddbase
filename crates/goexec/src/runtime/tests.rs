@@ -4,6 +4,249 @@ use super::*;
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 
+#[test]
+fn a_spare_steals_local_children_from_a_blocked_worker() {
+    let rt = Runtime::builder()
+        .parallelism(1)
+        .max_threads(2)
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let (sent, received) = mpsc::channel();
+        let child = spawn(async move {
+            sent.send(42).unwrap();
+        });
+        // The child is only in this worker's local queue. The spare must
+        // discover it when the monitor detaches the parent's blocking call.
+        assert_eq!(blocking(|| received.recv_timeout(TIMEOUT).unwrap()), 42);
+        child.await.unwrap();
+    });
+    assert!(rt.metrics().handoffs >= 1);
+    assert!(rt.shutdown_timeout(TIMEOUT));
+}
+
+#[test]
+fn stealing_nested_children_and_blocking_their_owners_keeps_progress() {
+    let rt = Runtime::builder()
+        .parallelism(4)
+        .max_threads(64)
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        for _ in 0..8 {
+            let parents: Vec<_> = (0..16)
+                .map(|_| {
+                    spawn(async {
+                        let (sent, received) = mpsc::channel();
+                        let child = spawn(async move {
+                            // Both generations originate in local queues and may be
+                            // moved by fast batch steals before their owner blocks.
+                            let (sent_again, received_again) = mpsc::channel();
+                            let grandchild = spawn(async move {
+                                sent_again.send(7).unwrap();
+                            });
+                            let value = blocking(|| received_again.recv_timeout(TIMEOUT).unwrap());
+                            grandchild.await.unwrap();
+                            sent.send(value).unwrap();
+                        });
+                        assert_eq!(blocking(|| received.recv_timeout(TIMEOUT).unwrap()), 7);
+                        child.await.unwrap();
+                    })
+                })
+                .collect();
+            for parent in parents {
+                parent.await.unwrap();
+            }
+        }
+    });
+    assert!(rt.shutdown_timeout(TIMEOUT));
+}
+
+#[test]
+fn external_injection_is_not_starved_by_a_self_waking_local_task() {
+    let rt = Runtime::builder().parallelism(1).build().unwrap();
+    let (started, running) = mpsc::channel();
+    let stop = Arc::new(AtomicBool::new(false));
+    let done = stop.clone();
+    let busy = rt.spawn(async move {
+        started.send(()).unwrap();
+        while !done.load(Ordering::Acquire) {
+            yield_now().await;
+        }
+    });
+    running.recv_timeout(TIMEOUT).unwrap();
+    let (sent, received) = mpsc::channel();
+    let injected = rt.spawn(async move {
+        stop.store(true, Ordering::Release);
+        sent.send(()).unwrap();
+    });
+    received.recv_timeout(TIMEOUT).unwrap();
+    futures::executor::block_on(injected).unwrap();
+    futures::executor::block_on(busy).unwrap();
+    assert!(rt.shutdown_timeout(TIMEOUT));
+}
+
+#[test]
+fn shutdown_drains_local_children_while_their_parent_is_still_blocked() {
+    struct CountDrop(Arc<AtomicUsize>);
+    impl Drop for CountDrop {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    let rt = Runtime::builder()
+        .parallelism(1)
+        .max_threads(2)
+        .build()
+        .unwrap();
+    let drops = Arc::new(AtomicUsize::new(0));
+    let count = drops.clone();
+    let (entered, started) = mpsc::channel();
+    let (release, released) = mpsc::channel();
+    let mut parent = rt.spawn(async move {
+        let mut children = Vec::new();
+        for _ in 0..256 {
+            let guard = CountDrop(count.clone());
+            children.push(spawn(async move {
+                let _guard = guard;
+                std::future::pending::<()>().await;
+            }));
+        }
+        blocking(|| {
+            entered.send(children).unwrap();
+            released.recv_timeout(TIMEOUT).unwrap();
+        });
+    });
+    let children = started.recv_timeout(TIMEOUT).unwrap();
+    assert!(!rt.shutdown_timeout(Duration::ZERO));
+    for child in children {
+        assert!(futures::executor::block_on(child)
+            .unwrap_err()
+            .is_cancelled());
+    }
+    assert_eq!(drops.load(Ordering::Relaxed), 256);
+    assert!(futures::FutureExt::now_or_never(&mut parent).is_none());
+    release.send(()).unwrap();
+    let _ = futures::executor::block_on(parent);
+}
+
+#[test]
+fn a_returning_caller_interrupts_a_worker_lease_at_the_poll_boundary() {
+    let rt = runtime(2);
+    let returned = Arc::new(AtomicBool::new(false));
+    let flag = returned.clone();
+    let (entered, started) = mpsc::channel();
+    let (release_parent, parent_release) = mpsc::channel();
+    let parent = rt.spawn(async move {
+        blocking(|| {
+            entered.send(()).unwrap();
+            parent_release.recv_timeout(TIMEOUT).unwrap();
+        });
+        flag.store(true, Ordering::Release);
+    });
+    started.recv_timeout(TIMEOUT).unwrap();
+    let (polling, polled) = mpsc::channel();
+    let (release_poll, poll_release) = mpsc::channel();
+    let mut first = true;
+    let busy = rt.spawn(poll_fn(move |cx| {
+        if first {
+            first = false;
+            polling.send(()).unwrap();
+            poll_release.recv_timeout(TIMEOUT).unwrap();
+            cx.waker().wake_by_ref();
+            Poll::Pending
+        } else {
+            assert!(
+                returned.load(Ordering::Acquire),
+                "lease bypassed returning caller"
+            );
+            Poll::Ready(())
+        }
+    }));
+    scan(&rt);
+    polled.recv_timeout(TIMEOUT).unwrap();
+    release_parent.send(()).unwrap();
+    wait_state(&rt, |state| state.returning.len() == 1);
+    release_poll.send(()).unwrap();
+    futures::executor::block_on(parent).unwrap();
+    futures::executor::block_on(busy).unwrap();
+    assert!(rt.shutdown_timeout(TIMEOUT));
+}
+
+#[test]
+fn targeted_wakes_fill_capacity_and_a_single_worker_can_drain_a_burst() {
+    let rt = Runtime::builder()
+        .parallelism(4)
+        .max_threads(8)
+        .build()
+        .unwrap();
+    for _ in 0..16 {
+        let (entered, started) = mpsc::channel();
+        let mut held = Vec::new();
+        let mut releases = Vec::new();
+        for _ in 0..4 {
+            let entered = entered.clone();
+            let (release, released) = mpsc::channel();
+            releases.push(release);
+            held.push(rt.spawn(async move {
+                entered.send(()).unwrap();
+                // Deliberately retain the permit until the test releases it.
+                released.recv_timeout(TIMEOUT).unwrap();
+            }));
+        }
+        // One notification must cascade to all four available execution slots.
+        for _ in 0..4 {
+            started.recv_timeout(TIMEOUT).unwrap();
+        }
+        let (done, completed) = mpsc::channel();
+        let mut burst = Vec::new();
+        for i in 0..128 {
+            let done = done.clone();
+            burst.push(rt.spawn(async move {
+                yield_now().await;
+                done.send(i).unwrap();
+            }));
+        }
+        releases.remove(0).send(()).unwrap();
+        let mut result = (0..128)
+            .map(|_| completed.recv_timeout(TIMEOUT).unwrap())
+            .collect::<Vec<_>>();
+        result.sort_unstable();
+        assert_eq!(result, (0..128).collect::<Vec<_>>());
+        for release in releases {
+            release.send(()).unwrap();
+        }
+        for handle in held.into_iter().chain(burst) {
+            futures::executor::block_on(handle).unwrap();
+        }
+    }
+    assert!(rt.shutdown_timeout(TIMEOUT));
+}
+
+#[test]
+fn external_wake_racing_the_last_poll_keeps_the_runtime_live() {
+    let rt = Runtime::builder().parallelism(4).build().unwrap();
+    for _ in 0..128 {
+        let (started, ready) = mpsc::channel();
+        let (done, completed) = mpsc::channel();
+        let mut first = true;
+        let handle = rt.spawn(poll_fn(move |cx| {
+            if first {
+                first = false;
+                started.send(cx.waker().clone()).unwrap();
+                Poll::Pending
+            } else {
+                done.send(()).unwrap();
+                Poll::Ready(())
+            }
+        }));
+        ready.recv_timeout(TIMEOUT).unwrap().wake();
+        completed.recv_timeout(TIMEOUT).unwrap();
+        futures::executor::block_on(handle).unwrap();
+    }
+    assert!(rt.shutdown_timeout(TIMEOUT));
+}
+
 fn runtime(max_threads: usize) -> Runtime {
     let mut builder = Runtime::builder().parallelism(1).max_threads(max_threads);
     builder.manual_monitor = true;
@@ -25,7 +268,7 @@ fn blocked(rt: &Runtime) -> (JoinHandle<()>, mpsc::Sender<()>) {
 
 fn scan(rt: &Runtime) {
     let mut observations = Vec::new();
-    let mut state = rt.shared.state.lock().unwrap();
+    let mut state = rt.shared.state.lock();
     let now = Instant::now();
     rt.shared.scan(&mut state, &mut observations, now);
     rt.shared
@@ -33,12 +276,10 @@ fn scan(rt: &Runtime) {
 }
 
 fn wait_state(rt: &Runtime, predicate: impl Fn(&Scheduler) -> bool) {
-    let state = rt.shared.state.lock().unwrap();
-    let (state, _) = rt
-        .shared
+    let mut state = rt.shared.state.lock();
+    rt.shared
         .changed
-        .wait_timeout_while(state, TIMEOUT, |s| !predicate(s))
-        .unwrap();
+        .wait_while_for(&mut state, |s| !predicate(s), TIMEOUT);
     assert!(predicate(&state), "scheduler condition timed out");
 }
 
@@ -74,14 +315,14 @@ fn handoff_needs_elapsed_observation_and_queued_work() {
     let now = Instant::now();
     let mut observations = Vec::new();
     {
-        let mut state = rt.shared.state.lock().unwrap();
+        let mut state = rt.shared.state.lock();
         rt.shared.scan(&mut state, &mut observations, now);
         rt.shared.scan(&mut state, &mut observations, now);
     }
     assert_eq!(rt.metrics().handoffs, 0);
     assert!(completion.try_recv().is_err());
     {
-        let mut state = rt.shared.state.lock().unwrap();
+        let mut state = rt.shared.state.lock();
         rt.shared
             .scan(&mut state, &mut observations, now + rt.shared.handoff_delay);
     }
@@ -223,26 +464,26 @@ fn shutdown_wakes_pending_tasks_while_a_syscall_is_still_running() {
         .unwrap_err()
         .is_cancelled());
     {
-        let state = handle.shared.state.lock().unwrap();
-        let (state, _) = handle
-            .shared
-            .changed
-            .wait_timeout_while(state, TIMEOUT, |s| s.tasks.len() != 1)
-            .unwrap();
-        assert_eq!(state.tasks.len(), 1);
+        let mut state = handle.shared.state.lock();
+        handle.shared.changed.wait_while_for(
+            &mut state,
+            |_| handle.shared.task_count() != 1,
+            TIMEOUT,
+        );
+        assert_eq!(handle.shared.task_count(), 1);
     }
     release.send(()).unwrap();
     let _ = futures::executor::block_on(first);
-    let state = handle.shared.state.lock().unwrap();
-    let (state, _) = handle
-        .shared
-        .changed
-        .wait_timeout_while(state, TIMEOUT, |s| s.live_workers != 0 || s.monitor_alive)
-        .unwrap();
+    let mut state = handle.shared.state.lock();
+    handle.shared.changed.wait_while_for(
+        &mut state,
+        |s| s.live_workers != 0 || s.monitor_alive,
+        TIMEOUT,
+    );
     assert_eq!(state.live_workers, 0);
     assert!(!state.monitor_alive);
     assert_eq!(state.permits, 0);
-    assert!(state.tasks.is_empty());
+    assert_eq!(handle.shared.task_count(), 0);
 }
 
 #[test]
@@ -288,13 +529,13 @@ fn fast_returns_and_new_generations_invalidate_monitor_observations() {
     let now = Instant::now();
     let mut observations = Vec::new();
     {
-        let mut state = rt.shared.state.lock().unwrap();
+        let mut state = rt.shared.state.lock();
         rt.shared.scan(&mut state, &mut observations, now);
     }
     release.send(()).unwrap();
     assert_eq!(started.recv_timeout(TIMEOUT).unwrap(), 1);
     {
-        let mut state = rt.shared.state.lock().unwrap();
+        let mut state = rt.shared.state.lock();
         // The old observation is expired, but this is a new syscall generation.
         rt.shared
             .scan(&mut state, &mut observations, now + rt.shared.handoff_delay);
@@ -304,7 +545,7 @@ fn fast_returns_and_new_generations_invalidate_monitor_observations() {
     release.send(()).unwrap();
     assert_eq!(started.recv_timeout(TIMEOUT).unwrap(), 2);
     {
-        let mut state = rt.shared.state.lock().unwrap();
+        let mut state = rt.shared.state.lock();
         rt.shared.scan(
             &mut state,
             &mut observations,
@@ -312,7 +553,7 @@ fn fast_returns_and_new_generations_invalidate_monitor_observations() {
         );
         assert_eq!(state.handoffs, 0);
         assert_eq!(state.permits, 1);
-        assert_eq!(state.ready.len(), 1);
+        assert!(rt.shared.has_ready(&state));
     }
     release.send(()).unwrap();
     futures::executor::block_on(task).unwrap();
@@ -352,7 +593,9 @@ fn racing_return_scan_and_wakes_never_repoll_or_leak_a_permit() {
         });
         futures::executor::block_on(task).unwrap();
         futures::executor::block_on(other).unwrap();
-        wait_state(&rt, |state| state.polling == 0 && state.ready.is_empty());
+        wait_state(&rt, |state| {
+            state.polling == 0 && !rt.shared.has_ready(state)
+        });
         assert_eq!(rt.metrics().active_permits, 0);
     }
     assert!(rt.shutdown_timeout(TIMEOUT));
@@ -381,14 +624,13 @@ fn timed_shutdown_waits_for_native_thread_local_destructors() {
     assert!(!rt.shutdown_timeout(Duration::ZERO));
     started.recv_timeout(TIMEOUT).unwrap();
     assert!(handle.metrics().live_threads > 0);
-    assert!(handle.shared.state.lock().unwrap().monitor_alive);
+    assert!(handle.shared.state.lock().monitor_alive);
     release.send(()).unwrap();
-    let state = handle.shared.state.lock().unwrap();
-    let (state, _) = handle
+    let mut state = handle.shared.state.lock();
+    handle
         .shared
         .changed
-        .wait_timeout_while(state, TIMEOUT, |s| s.monitor_alive)
-        .unwrap();
+        .wait_while_for(&mut state, |s| s.monitor_alive, TIMEOUT);
     assert!(!state.monitor_alive);
     assert_eq!(state.live_workers, 0);
 }

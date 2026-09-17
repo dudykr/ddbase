@@ -68,19 +68,38 @@ Defaults are available CPU count for `parallelism`,
 exceed parallelism. The cap counts all workers, including blocked workers and
 spares, but excludes the single monitor thread.
 
-The scheduler uses a shared FIFO queue and a mutex/condition variable. It starts
-`parallelism + 1` workers. Extra workers are created as needed, then reused until
-shutdown. At most `parallelism` workers hold permits for user execution outside
-marked blocking regions. Code inside a marked region must actually be blocking;
-putting CPU work there can oversubscribe the machine.
+The scheduler uses worker-local FIFO deques with batch work stealing and a shared
+injection queue for external wakes. A blocked worker's queued tasks remain
+stealable. It starts `parallelism + 1` workers. Extra workers are created as
+needed, then reused until shutdown. At most `parallelism` workers hold permits
+for user execution outside marked blocking regions. Code inside a marked region
+must actually be blocking; putting CPU work there can oversubscribe the machine.
 
-The common path is TLS bookkeeping and atomic syscall-generation transitions:
+A worker retains its permit for at most 64 polls before a scheduler checkpoint,
+and checks the injection queue at least every 16 polls. Returning callers and
+shutdown force an earlier checkpoint at the next poll boundary. Task registration
+and removal use sharded `parking_lot`-protected registries. Normal local queue
+operations do not acquire the scheduler mutex or update a shared task counter.
+
+Ready workers, returning callers, the monitor, and shutdown observers have
+separate wake paths. Enqueue wakes a worker only when an execution permit is
+available; returning callers wake in FIFO order on per-worker condition
+variables. Queue publication and the final search before parking use paired
+memory fences so either the waiter sees work or its publisher sees the wake
+request. Ordinary task completion does not broadcast to idle threads; shutdown
+still wakes every parked worker.
+
+The common blocking-call path is TLS bookkeeping and atomic syscall-generation transitions:
 it does not allocate a task, enqueue work, wake another thread, or read a clock
 per call. A monitor samples at the configured delay. After observing the same
 generation for at least that delay, it can reclaim the permit if work is waiting
 and a replacement thread is available. A first observation starts the interval;
 100 microseconds is not an upper bound on handoff latency. OS timer resolution
-and scheduling affect it. The monitor parks when the runtime is idle.
+and scheduling affect it. The monitor parks when no queued work or returning
+caller needs attention. Fast batch steals notify after publishing into their
+destination deque, so a waiter that missed both queues during transfer is
+woken. Ordinary task wakes do not interrupt an active observation interval to
+trigger extra scans.
 
 Return and reclamation race via an atomic generation-tagged state. A reclaimed
 caller waits in a FIFO return queue to reacquire a permit before continuing user
@@ -92,7 +111,8 @@ keeps its permit and queued work may stall until a call returns. This is a hard
 cap, not a deadlock avoidance guarantee: a blocked call depending on queued work
 can deadlock at capacity. `Runtime::metrics()` / `Handle::metrics()` expose
 threads, permits, queue/task counts, handoffs, capacity delays and spawn failures.
-The latter two count attempted handoffs, not unique syscalls.
+The latter two count attempted handoffs, not unique syscalls. Queue/task counts
+are approximate snapshots across independently changing queues and registries.
 
 CPU loops must yield cooperatively (`goexec::yield_now().await`). There is no
 forced preemption. `join!`, `select!` and timeout branches within the **same
@@ -100,7 +120,7 @@ task** cannot advance while one branch blocks; spawn independent tasks when
 they need independent progress.
 
 This crate does not replace the entire Tokio API. Version 0.1 has no network or
-timer driver, Tokio integration layer, work stealing, or `!Send` task support.
+timer driver, Tokio integration layer, or `!Send` task support.
 Using a Tokio API which needs its runtime context on these workers is unsupported.
 
 ## Cancellation and shutdown
@@ -135,8 +155,9 @@ of depending on short sleeps. Channels/condition variables establish syscall
 entry, return ordering and cleanup; generous timeouts detect failures. An
 integration test uses an actual blocking TCP read with one execution permit.
 Loom tests exercise the production atomic state machine and bounded models of
-its locked permit and park/wake protocols, rather than the whole executor or
-`async-task` internals. CI runs ordinary tests on all three supported OSes and
+its locked permit, targeted FIFO return wakeups, fenced queue-publication/park
+protocol, and sharded admission/shutdown protocol. They do not model the whole
+executor or `async-task`/`crossbeam-deque` internals. CI runs ordinary tests on all three supported OSes and
 the Loom models on Linux. Keep the lockfile when using the pinned old nightly;
 its generator version is selected for Windows compiler compatibility.
 
