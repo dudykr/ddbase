@@ -6,7 +6,7 @@ license = { workspace = true }
 name = "goexec"
 publish = true
 repository = { workspace = true }
-version = "0.1.1"
+version = "0.1.2"
 
 [features]
 # Only enables model tests; not an alternative production runtime.
