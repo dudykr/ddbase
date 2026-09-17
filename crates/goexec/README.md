@@ -206,7 +206,7 @@ independent progress during long blocking calls are correctness requirements.
 
 ### Go scheduler comparison
 
-Measured results, including workload-specific regressions and raw CSV, are in
+Measured results, including workload-specific regressions, are summarized in
 [BENCHMARKS.md](BENCHMARKS.md).
 
 The optional Go companion needs Go 1.22+ on Linux or macOS and Python 3.9+.

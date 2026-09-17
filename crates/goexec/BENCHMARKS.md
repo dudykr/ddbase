@@ -37,8 +37,8 @@ multiply/rotate recurrence. Mixed repeats wait/read/CPU/CPU.
 ## Main results
 
 Median operations/second (higher is better). Ratios are ratios of medians;
-values below 1 indicate a slowdown. Min/max for every row and individual runs
-are linked below; five samples do not establish statistical significance.
+values below 1 indicate a slowdown. Five samples do not establish statistical
+significance.
 
 | P | Workload | Before | After | Go | After / before | After / Go |
 |---:|---|---:|---:|---:|---:|---:|
@@ -125,15 +125,12 @@ python3 crates/goexec/benches/compare_go.py --baseline /absolute/path/to/compare
 ```
 
 The second command also measures Go; the longer goexec-only experiment above
-included a cache-only intermediate build, recorded as `cache-only` in its raw
-CSV. `candidate` denotes the final two scheduler changes. `baseline` denotes
-the original scheduler. The main CSV uses `goexec`, `go`, and `baseline`.
+included a cache-only intermediate build. The runner writes raw runs, median
+and min/max summaries, and environment metadata to
+`target/goexec-comparison/results` by default, or to the specified `--output`
+directory. Generated result files are not checked into the repository.
 
 This host had a configured but unavailable `sccache`; Rust commands were run
 with `RUSTC_WRAPPER=`. No compiler flags or global configuration were changed.
 
-- [Main raw runs](benches/results/2026-09-17-m3-max.csv)
-- [Median and min/max summary](benches/results/2026-09-17-m3-max-summary.csv)
-- [Environment, settings and binary hashes](benches/results/2026-09-17-m3-max-environment.json)
-- [Longer scheduler runs, including the intermediate variant](benches/results/2026-09-17-m3-max-long-runs.csv)
-- [Harness options and methodology](README.md#go-scheduler-comparison)
+See [harness options and methodology](README.md#go-scheduler-comparison).
