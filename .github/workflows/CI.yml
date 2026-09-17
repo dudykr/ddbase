@@ -125,6 +125,7 @@ jobs:
         with:
           profile: minimal
       - run: cargo test -p goexec --locked
+      - run: cargo test -p goexec --locked --features time
       - run: cargo check -p goexec --all-targets --locked
 
   goexec-loom:

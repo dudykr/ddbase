@@ -130,8 +130,9 @@ forced preemption. `join!`, `select!` and timeout branches within the **same
 task** cannot advance while one branch blocks; spawn independent tasks when
 they need independent progress.
 
-This crate does not replace the entire Tokio API. Version 0.1 has no network or
-timer driver, Tokio integration layer, or `!Send` task support.
+This crate does not replace the entire Tokio API. It has no network driver,
+Tokio integration layer, or `!Send` task support. The optional `time` feature
+provides executor-independent timers.
 Using a Tokio API which needs its runtime context on these workers is unsupported.
 
 ## Cancellation and shutdown
@@ -273,3 +274,25 @@ cargo bench -p goexec --locked --bench compare -- \
 Go's scheduling API and syscall behavior are described in the
 [runtime documentation](https://pkg.go.dev/runtime) and
 [Go 1.25.1 scheduler source](https://github.com/golang/go/blob/go1.25.1/src/runtime/proc.go).
+
+### Timers and cooperative checkpoints
+
+Enable `goexec/time` to use `time::{sleep, sleep_until, timeout, timeout_at,
+interval}`. Timers use async-io's process-global driver, require no Tokio runtime,
+and do not block workers. The driver thread may outlive a runtime and is not
+included in `Runtime::metrics()` worker counts. Dropping a pending timer removes
+its registration. A timeout polls its inner future first; a ready value wins a
+simultaneously ready timer. It cannot interrupt a synchronous poll or syscall.
+
+Intervals tick immediately once, then follow their period. `MissedTickBehavior`
+supports `Burst` (default), `Delay`, and `Skip`, with a five-millisecond lateness
+tolerance. `tick()` is cancellation safe. Zero periods panic. Unrepresentable
+sleep deadlines never fire. `Interval::poll_tick` allows stream adapters without
+an additional task.
+
+`consume_budget().await` consumes one of 128 checkpoints per task poll, yielding
+when exhausted. Sibling futures share the budget; each new task poll resets it.
+Outside a goexec task it is a no-op. This covers explicit checkpoints only; it
+does not make third-party synchronization primitives participate in the budget.
+
+Validate the optional API with `cargo test -p goexec --locked --features time`.

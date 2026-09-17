@@ -151,6 +151,7 @@ impl<F: Future> Future for TaskFuture<F> {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         let result = catch_unwind(AssertUnwindSafe(|| {
+            let _budget = crate::coop::enter();
             self.future
                 .as_mut()
                 .expect("task polled after completion")
