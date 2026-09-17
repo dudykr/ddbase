@@ -4,7 +4,7 @@ description = "An experimental executor with deferred blocking-call handoff"
 edition = { workspace = true }
 license = { workspace = true }
 name = "goexec"
-publish = false
+publish = true
 repository = { workspace = true }
 version = "0.1.0"
 
