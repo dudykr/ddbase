@@ -1,12 +1,19 @@
 # Go scheduler comparison — 2026-09-17
 
+This is an archived report for the optimization in
+`01ed65c34b235f6a9dec7c7baa6903e11b575f53`. The peer-list and cancellation-waker
+optimizations were subsequently reverted after native Rspack builds showed
+application-level regressions. Its "After" numbers describe that historical
+revision, not the current implementation. The benchmarks and regression tests
+remain available.
+
 Caching cancellation-waker registration improves sustained cooperative work:
 Yield is 13% faster at one permit and 35% faster at four permits, while the
 16-permit result is essentially unchanged. Empty blocking boundaries improve
 12–51% by median. CPU and I/O workloads show little consistent change; the
 longer 16-permit mixed workload is 3.2% slower. This is not a universal speedup.
 
-These results compare the current change against
+These results compare that historical change against
 `79d7a27d545ee3435b18fdbbe597e0b3eff22fdd`, which already includes stealing-peer
 caching and per-worker poll stores. The earlier optimization's results remain
 in [the previous report](https://github.com/dudykr/ddbase/blob/79d7a27d545ee3435b18fdbbe597e0b3eff22fdd/crates/goexec/BENCHMARKS.md).
@@ -94,7 +101,7 @@ observed min–max ranges:
 
 P=1 Yield/Empty and P=4 Yield have non-overlapping observed ranges. Other cells
 have more host-scheduling variability. In particular, the P=16 Yield gain in
-the short run does not persist in this longer test. The retained optimization
+the short run does not persist in this longer test. The measured optimization
 removes repeated registration work, but does not guarantee improved scaling
 on every workload or machine.
 

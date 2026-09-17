@@ -17,7 +17,7 @@ use async_task::Runnable;
 use crossbeam_deque::{Injector, Steal, Stealer, Worker as LocalQueue};
 use futures::{
     channel::oneshot,
-    future::{poll_fn, AbortHandle},
+    future::{poll_fn, AbortHandle, Abortable},
 };
 use parking_lot::{Condvar, Mutex};
 
@@ -445,7 +445,12 @@ impl Shared {
             shard.tasks.insert(index, abort);
             TaskId { registry, index }
         };
-        let task = TaskFuture::new(future, registration, sender, self.clone(), id);
+        let task = TaskFuture::new(
+            Abortable::new(future, registration),
+            sender,
+            self.clone(),
+            id,
+        );
         let scheduler = self.clone();
         let (runnable, task) = async_task::spawn(task, move |runnable| scheduler.enqueue(runnable));
         task.detach();
@@ -474,7 +479,18 @@ impl Shared {
         {
             let mut state = self.state.lock();
             self.wake_monitor(&mut state);
-            self.wake_available(&state);
+            // Consume this wake request without rearming it in the publisher.
+            // The awakened worker rearms before running when capacity remains,
+            // so a burst need not take the scheduler lock for every enqueue.
+            if state.permits < self.parallelism {
+                if let Some(&id) = state.returning.front() {
+                    state.workers[id].worker.returned.notify_one();
+                } else if state.sleeping_workers != 0 {
+                    // Publication may race a batch transfer between queues.
+                    // Wake a worker even if a queue search would miss the work.
+                    self.work_available.notify_one();
+                }
+            }
         }
     }
 
@@ -588,7 +604,13 @@ impl Shared {
         if self.fail_spawn.load(Ordering::Relaxed) {
             return Err(io::Error::other("injected thread spawn failure"));
         }
-        let local = LocalQueue::new_fifo();
+        // A single permit benefits from breadth-first progress. With parallel
+        // consumers, keep recent work local and let thieves take older work.
+        let local = if self.parallelism == 1 {
+            LocalQueue::new_fifo()
+        } else {
+            LocalQueue::new_lifo()
+        };
         let worker = Arc::new(Worker {
             id: state.workers.len(),
             call: CallState::new(),
@@ -612,13 +634,23 @@ impl Shared {
 
     fn next_runnable(
         &self,
+        worker: &Worker,
         local: &LocalQueue<Runnable>,
         stealers: &[Stealer<Runnable>],
         global_first: bool,
+        oldest_first: bool,
     ) -> Option<(Runnable, bool)> {
         if global_first {
             if let Steal::Success(task) = self.ready.steal_batch_and_pop(local) {
                 return Some((task, true));
+            }
+        }
+        // Recently woken local tasks tend to reuse the worker's hot data. An
+        // oldest-first turn prevents a self-waking task from starving siblings.
+        // The stealer end remains available to other workers while we block.
+        if oldest_first && self.parallelism > 1 {
+            if let Steal::Success(task) = worker.stealer.steal() {
+                return Some((task, false));
             }
         }
         if let Some(task) = local.pop() {
@@ -653,28 +685,23 @@ impl Shared {
     }
 
     fn run_worker(&self, worker: &Worker, local: &LocalQueue<Runnable>) {
-        let mut stealers = Vec::new();
-        let mut completed_polls = 0;
         let mut state = self.state.lock();
         loop {
             if self.finished(&state) {
                 return;
             }
             if state.permits < self.parallelism && state.returning.is_empty() {
-                // Workers are only added, never removed while the scheduler is
-                // running. Keep the rotated steal order across checkpoints;
-                // cloning every stealer here allocates and contends on their
-                // Arc counts once per 64 polls, even with purely local work.
-                if stealers.len() + 1 != state.workers.len() {
-                    stealers.clear();
-                    stealers.extend((1..state.workers.len()).map(|offset| {
+                let stealers: Vec<_> = (1..state.workers.len())
+                    .map(|offset| {
                         state.workers[(worker.id + offset) % state.workers.len()]
                             .worker
                             .stealer
                             .clone()
-                    }));
-                }
-                if let Some((mut runnable, _)) = self.next_runnable(local, &stealers, true) {
+                    })
+                    .collect();
+                if let Some((mut runnable, _)) =
+                    self.next_runnable(worker, local, &stealers, true, true)
+                {
                     state.permits += 1;
                     state.polling += 1;
                     state.workers[worker.id].busy = true;
@@ -684,10 +711,7 @@ impl Shared {
                     let mut polls = 0;
                     loop {
                         let _ = catch_unwind(AssertUnwindSafe(|| runnable.run()));
-                        // Only this worker writes its counter. Publish every
-                        // completed poll for metrics without an atomic RMW.
-                        completed_polls += 1;
-                        worker.polls.store(completed_polls, Ordering::Relaxed);
+                        worker.polls.fetch_add(1, Ordering::Relaxed);
                         polls += 1;
                         // A permit belongs to this worker across a bounded run
                         // of polls. Returning callers take it at the next poll
@@ -698,9 +722,13 @@ impl Shared {
                         {
                             break;
                         }
-                        let Some((next, transferred)) =
-                            self.next_runnable(local, &stealers, polls % 16 == 0)
-                        else {
+                        let Some((next, transferred)) = self.next_runnable(
+                            worker,
+                            local,
+                            &stealers,
+                            polls % 16 == 0,
+                            polls % 8 == 0,
+                        ) else {
                             break;
                         };
                         // A fast batch steal publishes work into a different

@@ -68,8 +68,11 @@ Defaults are available CPU count for `parallelism`,
 exceed parallelism. The cap counts all workers, including blocked workers and
 spares, but excludes the single monitor thread.
 
-The scheduler uses worker-local FIFO deques with batch work stealing and a shared
-injection queue for external wakes. A blocked worker's queued tasks remain
+The scheduler uses worker-local deques with batch work stealing and a shared
+injection queue for external wakes. With multiple execution permits, the owner
+prefers recent tasks (LIFO) for locality and serves older local work every eight
+polls and at permit checkpoints. External injection takes priority on its
+scheduled checks. A single-permit runtime uses FIFO order. A blocked worker's queued tasks remain
 stealable. It starts `parallelism + 1` workers. Extra workers are created as
 needed, then reused until shutdown. At most `parallelism` workers hold permits
 for user execution outside marked blocking regions. Code inside a marked region
@@ -80,14 +83,12 @@ and checks the injection queue at least every 16 polls. Returning callers and
 shutdown force an earlier checkpoint at the next poll boundary. Task registration
 and removal use sharded `parking_lot`-protected registries. Normal local queue
 operations do not acquire the scheduler mutex or update a shared task counter.
-Each worker caches its work-stealing peers until the worker set grows, avoiding
-allocation and reference-count traffic at every checkpoint. Poll metrics are
-published by their owning worker with atomic stores instead of atomic increments.
-Tasks also keep their cancellation-waker registration while the polling waker
-is unchanged. They still check cancellation before polling user code and after
-it yields; a new waker uses `Abortable`'s registration handshake. This avoids
-repeated atomic registration on every cooperative yield without changing abort
-or shutdown semantics.
+Workers rebuild their rotated work-stealing peer lists at scheduler checkpoints
+and increment poll metrics atomically. Tasks wrap their pinned user futures in
+`Abortable`, which checks cancellation and registers pending-task wakeups.
+The peer-list and cancellation-waker caches were reverted after the native
+Rspack comparison showed a build-time regression. The worker wakeup fix and
+cancellation, shutdown, fairness and worker-growth regression tests remain.
 
 Ready workers, returning callers, the monitor, and shutdown observers have
 separate wake paths. Enqueue wakes a worker only when an execution permit is
