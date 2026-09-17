@@ -8,6 +8,12 @@ runtime adapter, correctness harness, benchmark binary, and adapted original
 core Criterion read/create routines. It does not modify the upstream repository
 or publish a SurrealDB PR.
 
+The [recorded partial results](../results/2026-09-17-surrealdb/README.md) contain
+262 successful SDK runs and all 30 correctness configurations. Measurement
+stopped at the user's request before the full five-repeat matrix and core
+performance suites completed. Comparisons use only completed matched pairs;
+the archive includes regressions, repeat counts, raw CSV, and process logs.
+
 ## Variants
 
 - `tokio`: default SurrealDB task/timer execution and RocksDB inline/offload policy.
@@ -68,6 +74,9 @@ $PYTHON $RUNNER classic --output target/surrealdb-integration/classic
 # Validate completeness and package CSV, logs, metadata, and comparison tables.
 $PYTHON crates/goexec/benches/surrealdb/report.py
 ```
+
+For the archived user-stopped run, `report.py --allow-partial` produces the
+partial SDK report using the saved stop metadata. It does not start benchmarks.
 
 All builds use optimized release code with `opt-level=3`, `lto=false`,
 `codegen-units=16`, `panic=abort`, and the system allocator. The original

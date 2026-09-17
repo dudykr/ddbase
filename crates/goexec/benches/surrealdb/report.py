@@ -60,15 +60,184 @@ def detailed(rows):
                                          int(r["parallelism"]), int(r["lanes"]), r["variant"])):
         n = lambda name: number(r, name)
         output.append([r["backend"], r["workload"], r["parallelism"], r["lanes"],
-                       LABELS[r["variant"]], f'{n("ops_per_second_median"):,.0f}',
+                       LABELS[r["variant"]], r["repeats"], f'{n("ops_per_second_median"):,.0f}',
                        f'{n("ops_per_second_min"):,.0f}–{n("ops_per_second_max"):,.0f}',
-                       f'{n("throughput_vs_tokio"):.3f}×',
+                       f'{n("throughput_vs_tokio"):.3f}×' if r["throughput_vs_tokio"] else "—",
                        f'{n("p50_ns_median") / 1000:,.1f}', f'{n("p99_ns_median") / 1000:,.1f}',
                        f'{n("peak_rss_bytes_median") / 2**20:,.0f}',
                        f'{n("peak_threads_sampled_median"):g}', f'{n("handoffs_median"):,.0f}'])
-    return table(["Backend", "Workload", "P", "Lanes", "Variant", "Median ops/s",
+    return table(["Backend", "Workload", "P", "Lanes", "Variant", "Repeats", "Median ops/s",
                   "Ops/s min–max", "vs Tokio", "p50 µs", "p99 µs", "Peak RSS MiB",
                   "Peak threads", "Handoffs"], output)
+
+
+def publish_partial(root, output):
+    """Archive a user-stopped SDK run and compare only completed matched pairs."""
+    rows = read_csv(root / "results/runs.csv")
+    valid = [r for r in {r["run_id"]: r for r in rows}.values() if r["valid"] == "True"]
+    assert valid and all(int(r["errors"]) == 0 for r in valid)
+    summary = read_csv(root / "results/summary.csv")
+    keys = ("backend", "workload", "parallelism", "lanes", "records", "seed", "repeat")
+    baseline = {tuple(r[k] for k in keys): r for r in valid if r["variant"] == "tokio"}
+    groups = {}
+    for row in valid:
+        if row["variant"] == "tokio":
+            continue
+        base = baseline.get(tuple(row[k] for k in keys))
+        if base:
+            groups.setdefault((row["variant"], *group_key(row)), []).append((row, base))
+    pairs = []
+    for key, samples in sorted(groups.items()):
+        row = dict(zip(("variant", "backend", "workload", "parallelism", "lanes"), key))
+        row.update(repeats=len(samples), repeat_ids=",".join(sorted(s[0]["repeat"] for s in samples)))
+        for metric in ("ops_per_second", "p50_ns", "p99_ns"):
+            for index, label in ((0, "variant"), (1, "tokio")):
+                values = [number(s[index], metric) for s in samples]
+                for name, fn in (("median", statistics.median), ("min", min), ("max", max)):
+                    row[f"{label}_{metric}_{name}"] = fn(values)
+            row[metric + "_ratio"] = row[f"variant_{metric}_median"] / row[f"tokio_{metric}_median"]
+        pairs.append(row)
+    output.mkdir(parents=True, exist_ok=True)
+    for filename in ("runs.csv", "summary.csv", "environment.json"):
+        shutil.copy2(root / "results" / filename, output / ("sdk-" + filename))
+    verification_file = root / "verification/verification.json"
+    if not verification_file.exists():
+        verification_file = root / "verification.json"
+    verified = json.loads(verification_file.read_text())
+    assert len(verified) == 30 and all(r["passed"] for r in verified)
+    shutil.copy2(verification_file, output / "verification.json")
+    shutil.copy2(root / "stopped-by-user.json", output / "stopped-by-user.json")
+    with (output / "sdk-paired-summary.csv").open("w", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(pairs[0]))
+        writer.writeheader()
+        writer.writerows(pairs)
+    with tarfile.open(output / "process-logs.tar.gz", "w:gz") as archive:
+        for path in sorted((root / "results/logs").iterdir()):
+            archive.add(path, arcname=str(path.relative_to(root)))
+    aggregate = []
+    extremes = []
+    widths = []
+    for backend, variant in (("memory", "goexec"), ("rocksdb", "goexec"), ("rocksdb", "goexec-blocking")):
+        selected = [r for r in pairs if r["backend"] == backend and r["variant"] == variant]
+        if not selected:
+            continue
+        ratios = [r["ops_per_second_ratio"] for r in selected]
+        aggregate.append([backend, LABELS[variant], len(selected), sum(r["repeats"] for r in selected),
+                          f"{geo(ratios):.3f}×", f"{min(ratios):.3f}–{max(ratios):.3f}×",
+                          f'{geo([r["p99_ns_ratio"] for r in selected]):.3f}×'])
+        for p in (1, 4, 16):
+            subset = [r for r in selected if int(r["parallelism"]) == p]
+            if not subset:
+                continue
+            widths.append([backend, LABELS[variant], p, len(subset),
+                           f'{geo([r["ops_per_second_ratio"] for r in subset]):.3f}×'])
+        for label, row in (("lowest", min(selected, key=lambda r: r["ops_per_second_ratio"])),
+                           ("highest", max(selected, key=lambda r: r["ops_per_second_ratio"]))):
+            extremes.append([backend, LABELS[variant], label, row["workload"], row["parallelism"],
+                             row["lanes"], row["repeats"], f'{row["ops_per_second_ratio"]:.3f}×'])
+    env = json.loads((root / "results/environment.json").read_text())
+    assert hashlib.sha256((HERE / "surrealdb.patch").read_bytes()).hexdigest() == env["patch_sha256"]
+    repeat_counts = {n: sum(int(r["repeats"]) == n for r in summary) for n in range(1, 6)}
+    document = f"""# SurrealDB embedded executor comparison — partial, stopped by user
+
+The user requested stopping after **{len(valid)} of 750 planned SDK runs**.
+All completed runs have zero response errors. {len(summary)} of 150 conditions
+have results; only {repeat_counts[5]} conditions reached all five repetitions.
+The final in-flight process was terminated and is excluded from CSV summaries.
+The full matched-core and original-core performance suites had not started.
+The earlier original-core smoke run is not used as performance evidence.
+
+The implementation and all 30 correctness configurations are complete. This
+report preserves the available measurements without presenting them as the
+completed benchmark plan. Repeat counts by condition: {repeat_counts}.
+
+## Interim SDK comparison
+
+Only a variant and Tokio run with the same workload, backend, P, concurrency,
+seed, and repeat ID form a comparison pair. Medians use the common completed
+repeats for each condition. Thus an unmatched final run cannot skew a ratio.
+The table equally weights the observed conditions using geometric means;
+missing conditions and one-sample cells limit its representativeness.
+Throughput above 1 is faster; p99 below 1 is lower latency.
+
+{table(['Backend', 'Variant', 'Paired conditions', 'Run pairs', 'Throughput / Tokio', 'Condition ratio range', 'p99 / Tokio'], aggregate)}
+
+The existing-policy goexec configuration is slower in this partial aggregate.
+RocksDB handoff improves the aggregate, but individual conditions include large
+regressions. These observations do not establish a general speedup, and the
+small/incomplete repeat counts cannot support statistical significance claims.
+
+{table(['Backend', 'Variant', 'P', 'Paired conditions', 'Throughput / Tokio'], widths)}
+
+{table(['Backend', 'Variant', 'Extreme', 'Workload', 'P', 'Lanes', 'Paired repeats', 'Throughput / Tokio'], extremes)}
+
+Use [paired summary CSV](sdk-paired-summary.csv) for comparisons. It includes
+common repeat IDs, min/median/max throughput, and p50/p99. The [condition table](sdk-details.md)
+and [raw summary](sdk-summary.csv) retain every completed condition and its
+repeat count, RSS, threads, and handoffs. Their direct ratio column uses each
+group's available samples; the paired summary above takes precedence where
+repeat counts differ. [Raw CSV](sdk-runs.csv) retains every completed run.
+
+## Reproduction, validation, and limits
+
+- SurrealDB v3.2.4: `{env['surrealdb_commit']}`.
+- Goexec [PR #107](https://github.com/dudykr/ddbase/pull/107), exact measured
+  runtime dependency: `{env['goexec_commit']}`. Later PR commits package tests,
+  reproduction, and results without changing that measured runtime.
+- Host: `{env['hardware'].replace(chr(10), '; ')}`; `{env['platform']}`.
+  Rust 1.95.0; release opt-level 3, LTO off, 16 codegen units, panic abort,
+  system allocator. [Environment and binary hashes](sdk-environment.json).
+- Every completed process seeded 100,000 records with 960 deterministic
+  alphanumeric payload bytes per record, warmed up for 3 seconds, and measured
+  for 10 seconds. Seed 20260917; serial shuffled execution; P=1,4,16 and lanes
+  P or 4P. No compiler/test/other benchmark ran alongside measurements.
+- Point read, create, version update, 80/20 read/update mix, and indexed
+  32-record range. Writes use disjoint lane-owned keys. Setup, seed, and
+  shutdown are excluded from timing. Closed-loop request latency includes SDK
+  queueing and response extraction; SQL/payload construction is excluded from
+  latency but contributes to throughput. There is no coordinated-omission correction.
+- Storage uses sync every, P RocksDB background threads, max(4,P) affinity
+  workers, P Rayon threads, and an inline reserve of two. Actual datastore
+  worker capacity is asserted. Both main executors have a 512-thread cap,
+  with native pools and goexec monitor/timer threads additional.
+- The existing-policy variant retains RocksDB inline/offload dispatch.
+  Handoff replaces only InlineGuard dispatch with goexec::blocking; explicit
+  count/compaction affinity jobs remain. Warm-cache local results do not
+  characterize cold disk or network servers. The host was not exclusively
+  isolated or CPU-pinned.
+- Peak RSS covers the whole process including setup/cleanup. Faster creates
+  insert more records, so their RSS does not isolate executor overhead at an
+  equal row count. Threads are sampled every 20 ms. Handoffs cover only the
+  timed phase.
+- No Tokio runtime is constructed in goexec runs; runtime-independent Tokio
+  primitives remain. Native networking, remote stores, scripting, ML, WASM,
+  extension runtimes, bucket/file APIs, and SDK import/export are unvalidated.
+- [Correctness validation](verification.json): all 30 SDK/core, memory/RocksDB,
+  runtime, and worker configurations passed CRUD, rollback, forced-index lookup,
+  SLEEP/query timeout, external cancellation, background shutdown, and RocksDB
+  reopen persistence. A separate 150-condition short smoke matrix also passed.
+- Goexec passed pinned-nightly and Rust 1.95 tests, fmt, clippy, and six Loom
+  models. CI passed Linux/macOS/Windows. Timer/budget tests cover cancellation,
+  reset, concurrent waits, missed ticks, shutdown, single-worker progress, and
+  the inability to preempt a synchronous poll.
+
+The [patch](../../surrealdb/surrealdb.patch) and [rerun commands](../../surrealdb/README.md)
+are retained. Patch SHA-256: `{env['patch_sha256']}`. A fresh pinned checkout
+accepted the patch and matched all 46 changed source files byte-for-byte.
+Resume the same runner/output directory to finish missing repetitions; no
+measurements resume automatically. Use `report.py --allow-partial` to recreate
+this archive. [Process logs](process-logs.tar.gz) include the interrupted final
+process; [stop metadata](stopped-by-user.json) records why it was excluded.
+
+Successful requests in the completed timed phases:
+{sum(int(r['operations']) for r in valid):,}.
+"""
+    (output / "README.md").write_text(document)
+    (output / "sdk-details.md").write_text("# Available SDK conditions\n\nIncomplete repeat counts are explicit. RSS/threads include setup and shutdown.\n\n" + detailed(summary) + "\n")
+    checksums = [hashlib.sha256(path.read_bytes()).hexdigest() + "  " + path.name
+                 for path in sorted(output.iterdir()) if path.is_file() and path.name != "SHA256SUMS"]
+    (output / "SHA256SUMS").write_text("\n".join(checksums) + "\n")
+    print(output)
 
 
 def publish(root, output):
@@ -291,5 +460,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, default=REPO / "target/surrealdb-integration")
     parser.add_argument("--output", type=Path, default=HERE.parent / "results/2026-09-17-surrealdb")
+    parser.add_argument("--allow-partial", action="store_true", help="Archive a user-stopped SDK matrix; compare only completed matched pairs")
     args = parser.parse_args()
-    publish(args.input.resolve(), args.output.resolve())
+    (publish_partial if args.allow_partial else publish)(args.input.resolve(), args.output.resolve())

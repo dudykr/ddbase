@@ -1,5 +1,9 @@
 # Go scheduler comparison — 2026-09-17
 
+Latest application comparison: [SurrealDB v3.2.4 embedded SDK](benches/results/2026-09-17-surrealdb/README.md).
+That separate experiment includes 262 completed runs and 30 correctness
+configurations; measurement stopped before all planned repetitions completed.
+
 This is an archived report for the optimization in
 `01ed65c34b235f6a9dec7c7baa6903e11b575f53`. The peer-list and cancellation-waker
 optimizations were subsequently reverted after native Rspack builds showed
