@@ -262,6 +262,9 @@ def classic(args, bins, output):
             "description": "Upstream core read/create routines, 1000 operations per batch, original small random values; separate from the 1 KiB fixed-seed SDK matrix",
             "rustc": command(["rustc", "+1.95.0", "-Vv"]),
             "profile": "release opt-level=3 lto=false codegen-units=16 panic=abort",
+            "storage": "Upstream builder defaults: sync=every; RocksDB threads=available_parallelism; inline workers=P and reserve=2; affinity pool=max(4,P)",
+            "runtime": "Upstream Tokio blocking cap=512 plus P workers; goexec total worker cap=512; main/matched suites use 512 total for both",
+            "estimate_unit": "nanoseconds per operation, batch elapsed time divided by BENCH_NUM_OPS; not request latency",
             "measurement_seconds": int(args.seconds), "repeats": args.repeats,
             "sample_size": 30}, indent=2) + "\n")
     blocks = list(itertools.product(args.backends.split(","), args.parallelism, range(args.repeats)))

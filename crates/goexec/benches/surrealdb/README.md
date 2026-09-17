@@ -58,8 +58,15 @@ $PYTHON $RUNNER bench --records 1000 --warmup 0.1 --seconds 0.3 --repeats 1 \
 # Full SDK matrix: 750 serial processes, 150 groups, five repeats per group.
 $PYTHON $RUNNER bench --output target/surrealdb-integration/results
 
+# Matched core read/create paths: same data and timing, 4P lanes, 150 processes.
+$PYTHON $RUNNER bench --access core --workloads read,create --factors 4 \
+  --output target/surrealdb-integration/core-results
+
 # Original core Criterion workloads: 75 serial processes, reads and creates.
 $PYTHON $RUNNER classic --output target/surrealdb-integration/classic
+
+# Validate completeness and package CSV, logs, metadata, and comparison tables.
+$PYTHON crates/goexec/benches/surrealdb/report.py
 ```
 
 All builds use optimized release code with `opt-level=3`, `lto=false`,
@@ -68,6 +75,22 @@ Criterion routines are built as the `native-sdb` binary in the same profile,
 avoiding a separate test-profile comparison. Their original small random values
 and read predicate differ from the SDK matrix; compare variants within each
 suite, not their absolute throughput against each other.
+In particular, the original read routine compares each stored field to a newly
+generated random value, so its result is normally empty. Main/matched point
+reads fetch existing records and require a nonempty result.
+
+The matched core suite uses the SDK suite's records and queries to expose the
+cost of the native router and response conversion. It runs after the SDK suite,
+so comparisons between access paths can also include time-dependent host
+variation. Runtime variants are shuffled within each suite. The original
+Criterion suite uses its own calibration and sampling; its 10-second target is
+per read/create routine and may be extended by Criterion.
+It retains upstream datastore defaults (`sync=every`, RocksDB background
+threads equal to available CPUs) across variants, while explicitly injecting
+P for inline capacity and setting the affinity pool to `max(4,P)`. It also
+retains Tokio's upstream default of 512 blocking threads in addition to P
+workers; goexec caps its workers at 512. The main and matched suites use P
+RocksDB threads and a 512 total executor-thread cap for both runtimes.
 
 The default paths can be overridden with `--source`, `--bins`, and `--output`.
 Successful rows can be resumed by rerunning the same command. The runner rejects
