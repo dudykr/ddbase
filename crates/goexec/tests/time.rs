@@ -72,7 +72,9 @@ fn reset_and_intervals_preserve_deadlines_and_cancel_safely() {
         sleep.reset(Instant::now());
         sleep.await;
         let mut ticks = time::interval(Duration::from_millis(10));
-        ticks.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
+        // Burst preserves scheduled instants even if the OS deschedules this
+        // test. Delay's deadline arithmetic is tested with explicit instants.
+        ticks.set_missed_tick_behavior(time::MissedTickBehavior::Burst);
         let first = ticks.tick().await;
         assert!(time::timeout(Duration::ZERO, ticks.tick()).await.is_err());
         let second = ticks.tick().await;
@@ -144,18 +146,22 @@ fn cooperative_cpu_loop_allows_a_sibling_to_cancel_it() {
     let (sent, received) = mpsc::channel();
     let iterations = Arc::new(AtomicUsize::new(0));
     let progress = iterations.clone();
+    let (entered, entry) = mpsc::channel();
     let loop_task = rt.spawn(async move {
+        entered.send(()).unwrap();
         loop {
             progress.fetch_add(1, Ordering::Relaxed);
             goexec::consume_budget().await;
         }
     });
+    entry.recv_timeout(LIMIT).unwrap();
     let _task = rt.spawn(async move {
         loop_task.abort();
         assert!(loop_task.await.unwrap_err().is_cancelled());
         sent.send(()).unwrap();
     });
     received.recv_timeout(LIMIT).unwrap();
+    assert!(iterations.load(Ordering::Relaxed) >= 129);
     assert!(rt.shutdown_timeout(LIMIT));
 }
 
