@@ -111,6 +111,33 @@ jobs:
         run: |
           cargo test --all
 
+  goexec-test:
+    name: goexec (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+      - run: cargo test -p goexec --locked
+      - run: cargo check -p goexec --all-targets --locked
+
+  goexec-loom:
+    name: goexec Loom models
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+      - run: cargo test -p goexec --locked --features loom --lib
+
   done:
     needs:
       - cargo-fmt
@@ -118,6 +145,8 @@ jobs:
       - cargo-deny
       - cargo-check
       - cargo-test
+      - goexec-test
+      - goexec-loom
     if: ${{ github.event_name != 'push' || github.ref != 'refs/heads/master' }}
     runs-on: ubuntu-latest
     name: Done

@@ -1,0 +1,27 @@
+[package]
+authors = { workspace = true }
+description = "An experimental executor with deferred blocking-call handoff"
+edition = { workspace = true }
+license = { workspace = true }
+name = "goexec"
+publish = true
+repository = { workspace = true }
+version = "0.1.1"
+
+[features]
+# Only enables model tests; not an alternative production runtime.
+loom = []
+
+[dependencies]
+async-task = { workspace = true }
+crossbeam-deque = { workspace = true }
+futures = { workspace = true }
+parking_lot = { workspace = true }
+
+[dev-dependencies]
+loom = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+
+[[bench]]
+name = "compare"
+harness = false
