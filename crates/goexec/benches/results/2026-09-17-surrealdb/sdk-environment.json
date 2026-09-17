@@ -1,0 +1,38 @@
+{
+  "surrealdb_commit": "93ab219d69f09d8f999851b0359c80ebe6726102",
+  "goexec_commit": "e57e96903c7c33a1c38fb34ee3c2ff11ed579145",
+  "goexec_pr": "https://github.com/dudykr/ddbase/pull/107",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "machine": "arm64",
+  "rustc": "rustc 1.95.0 (59807616e 2026-04-14)\nbinary: rustc\ncommit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860\ncommit-date: 2026-04-14\nhost: aarch64-apple-darwin\nrelease: 1.95.0\nLLVM version: 22.1.2",
+  "python": "3.9.6 (default, Aug 25 2026, 21:26:21) \n[Clang 21.0.0 (clang-2100.3.34.2)]",
+  "build": "release, opt-level=3, lto=false, codegen-units=16, panic=abort, system allocator",
+  "binaries": {
+    "tokio": "1dda62a344f62068f971e26a499036cbea8a1e7b9a6f36e55d594ec5e894e476",
+    "goexec": "7eed995be3eb2ed6eca0fb46f5bf4bab99ad8e508d72b025da681db2f7daebc0",
+    "goexec-blocking": "e963d801d8310f2cb89458be25ab0c11ddbbeddc08501d21e1d74f2cc4e7ef50"
+  },
+  "argv": [
+    "crates/goexec/benches/surrealdb/run.py",
+    "bench",
+    "--output",
+    "target/surrealdb-integration/results"
+  ],
+  "started_at": "2026-09-17T21:58:44+0900",
+  "thread_sampling_seconds": 0.02,
+  "memory_scope": "OS-reported process lifetime maximum RSS, including setup and teardown",
+  "latency_scope": "closed-loop request submission through checked response extraction; query string generation excluded",
+  "temperature": "warm cache; no OS page-cache flushing",
+  "payload": "960 deterministic alphanumeric bytes per record, derived from record ID and fixed seed",
+  "storage": "sync=every; RocksDB threads=P; KVS pool=max(4,P); Rayon=P; inline reserve=2",
+  "runtime": "worker parallelism=P; executor thread cap=512; goexec monitor/timer and storage pools are additional threads",
+  "timing": {
+    "records": 100000,
+    "warmup": 3,
+    "seconds": 10,
+    "repeats": 5,
+    "seed": 20260917
+  },
+  "hardware": "machdep.cpu.brand_string: Apple M5 Max\nhw.ncpu: 18\nhw.memsize: 137438953472",
+  "patch_sha256": "1549add9c7f178a6ad7b4e1a459f9f1b866d8c6060be5d4fb7d10ae3557a3326"
+}

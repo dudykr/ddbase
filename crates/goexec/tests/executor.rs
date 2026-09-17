@@ -387,3 +387,21 @@ fn invalid_configuration_is_rejected() {
         .build()
         .is_err());
 }
+#[test]
+fn join_error_is_send_sync_and_preserves_a_non_sync_panic_payload() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<goexec::JoinError>();
+    let runtime = goexec::Runtime::builder().parallelism(1).build().unwrap();
+    let task = runtime.spawn(async { std::panic::panic_any(std::cell::Cell::new(42)) });
+    let error = futures::executor::block_on(task).unwrap_err();
+    assert!(error.is_panic());
+    assert_eq!(
+        error
+            .into_panic()
+            .downcast::<std::cell::Cell<i32>>()
+            .unwrap()
+            .get(),
+        42
+    );
+    assert!(runtime.shutdown_timeout(std::time::Duration::from_secs(10)));
+}

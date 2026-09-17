@@ -1,0 +1,2016 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index c50a12c..270a300 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -2781,6 +2781,18 @@ dependencies = [
+  "walkdir",
+ ]
+ 
++[[package]]
++name = "goexec"
++version = "0.1.3"
++source = "git+https://github.com/dudykr/ddbase.git?rev=e57e96903c7c33a1c38fb34ee3c2ff11ed579145#e57e96903c7c33a1c38fb34ee3c2ff11ed579145"
++dependencies = [
++ "async-io",
++ "async-task",
++ "crossbeam-deque",
++ "futures",
++ "parking_lot",
++]
++
+ [[package]]
+ name = "group"
+ version = "0.13.0"
+@@ -2915,6 +2927,7 @@ checksum = "765c9198f173dd59ce26ff9f95ef0aafd0a0fe01fb9d72841bc5066a4c06511d"
+ dependencies = [
+  "base64 0.21.7",
+  "byteorder",
++ "crossbeam-channel",
+  "flate2",
+  "nom",
+  "num-traits",
+@@ -6538,6 +6551,26 @@ dependencies = [
+  "web-time",
+ ]
+ 
++[[package]]
++name = "surreal-runtime-bench"
++version = "0.1.0"
++dependencies = [
++ "anyhow",
++ "criterion",
++ "futures",
++ "goexec",
++ "hdrhistogram",
++ "rand 0.9.4",
++ "rayon",
++ "serde_json",
++ "surrealdb",
++ "surrealdb-core",
++ "surrealdb-types",
++ "tokio",
++ "tokio-util",
++ "web-time",
++]
++
+ [[package]]
+ name = "surrealdb"
+ version = "3.2.4"
+@@ -6552,6 +6585,7 @@ dependencies = [
+  "flate2",
+  "futures",
+  "getrandom 0.3.4",
++ "goexec",
+  "indexmap",
+  "js-sys",
+  "native-tls",
+@@ -6656,6 +6690,7 @@ dependencies = [
+  "geo",
+  "geo-types",
+  "getrandom 0.3.4",
++ "goexec",
+  "half",
+  "headers",
+  "hex",
+diff --git a/Cargo.toml b/Cargo.toml
+index 8e7c6b1..852192f 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -1,6 +1,7 @@
+ [workspace]
+ resolver = "3"
+ members = [
++    "runtime-bench",
+     # Root package
+     ".",
+     # SurrealDB crates
+diff --git a/runtime-bench/Cargo.toml b/runtime-bench/Cargo.toml
+new file mode 100644
+index 0000000..4775dfc
+--- /dev/null
++++ b/runtime-bench/Cargo.toml
+@@ -0,0 +1,34 @@
++[package]
++name = "surreal-runtime-bench"
++version = "0.1.0"
++edition = "2024"
++publish = false
++
++[features]
++default = ["kv-mem", "kv-rocksdb"]
++kv-mem = []
++kv-rocksdb = []
++kv-surrealkv = []
++protocol-ws = []
++runtime-goexec = ["surrealdb/runtime-goexec", "dep:goexec"]
++goexec-blocking = ["runtime-goexec", "surrealdb/goexec-blocking"]
++
++[dependencies]
++criterion.workspace = true
++rand.workspace = true
++web-time.workspace = true
++anyhow.workspace = true
++surrealdb = { workspace = true, default-features = false, features = ["kv-mem", "kv-rocksdb"] }
++surrealdb-core = { workspace = true, default-features = false, features = ["kv-mem", "kv-rocksdb"] }
++surrealdb-types.workspace = true
++tokio = { workspace = true, features = ["rt-multi-thread", "time", "sync"] }
++tokio-util.workspace = true
++futures.workspace = true
++serde_json.workspace = true
++rayon.workspace = true
++hdrhistogram = "7.5.4"
++goexec = { git = "https://github.com/dudykr/ddbase.git", rev = "e57e96903c7c33a1c38fb34ee3c2ff11ed579145", features = ["time"], optional = true }
++
++[[bin]]
++name = "native-sdb"
++path = "../surrealdb/benches/sdb.rs"
+diff --git a/runtime-bench/src/main.rs b/runtime-bench/src/main.rs
+new file mode 100644
+index 0000000..845b718
+--- /dev/null
++++ b/runtime-bench/src/main.rs
+@@ -0,0 +1,476 @@
++#![recursion_limit = "512"]
++use std::collections::HashMap;
++use std::hint::black_box;
++use std::sync::{Arc, OnceLock};
++use std::time::{Duration, Instant};
++
++use anyhow::{Context, Result, ensure};
++use hdrhistogram::Histogram;
++use serde_json::json;
++use surrealdb::Surreal;
++use surrealdb::engine::local::Db;
++use surrealdb_core::cnf::ConfigMap;
++use surrealdb_core::dbs::{Capabilities, Session};
++use surrealdb_core::kvs::Datastore;
++use surrealdb_core::options::EngineOptions;
++use surrealdb_core::runtime;
++use surrealdb_types::Value;
++use tokio_util::sync::CancellationToken;
++
++#[cfg(feature = "runtime-goexec")]
++static HANDLE: OnceLock<goexec::Handle> = OnceLock::new();
++
++#[derive(Clone)]
++struct Client {
++	ds: Arc<Datastore>,
++	sdk: Option<Surreal<Db>>,
++	cancel: CancellationToken,
++}
++
++impl Client {
++	async fn open(args: &Args) -> Result<Self> {
++		#[cfg(feature = "runtime-goexec")]
++		ensure!(
++			tokio::runtime::Handle::try_current().is_err(),
++			"a Tokio runtime must not exist in goexec runs"
++		);
++		let config = ConfigMap::from_env()
++			.with_key_value("datastore_sync", "every")
++			.with_key_value("rocksdb_thread_count", args.parallelism.to_string());
++		let ds = Arc::new(
++			Datastore::builder()
++				.with_config(config)
++				.with_runtime_worker_threads(args.parallelism)
++				.with_capabilities(Capabilities::all())
++				.build_with_path(&args.endpoint())
++				.await?,
++		);
++		if args.backend == "rocksdb" {
++			ensure!(
++				ds.collect_u64_metric("rocksdb.inline_blocking_cap")
++					== Some(args.parallelism.saturating_sub(2) as u64),
++				"effective RocksDB worker cap mismatch"
++			);
++		}
++		ds.check_version().await?;
++		ds.bootstrap().await?;
++		let cancel = CancellationToken::new();
++		let sdk = if args.access == "sdk" {
++			Some(
++				Surreal::unstable_from_datastore(
++					cancel.clone(),
++					ds.clone(),
++					None,
++					EngineOptions::default(),
++				)
++				.await?,
++			)
++		} else {
++			None
++		};
++		let client = Self {
++			ds,
++			sdk,
++			cancel,
++		};
++		if let Some(db) = &client.sdk {
++			db.query("DEFINE NAMESPACE IF NOT EXISTS bench").await?.check()?;
++			db.use_ns("bench").await?;
++			db.query("DEFINE DATABASE IF NOT EXISTS bench").await?.check()?;
++			db.use_db("bench").await?;
++		} else {
++			for (query, session) in [
++				("DEFINE NAMESPACE IF NOT EXISTS bench", Session::owner()),
++				("DEFINE DATABASE IF NOT EXISTS bench", Session::owner().with_ns("bench")),
++			] {
++				for response in client.ds.execute(query, &session, None).await? {
++					response.output()?;
++				}
++			}
++		}
++		Ok(client)
++	}
++
++	async fn query(&self, sql: &str) -> Result<Vec<Value>> {
++		if let Some(db) = &self.sdk {
++			let mut response = db.query(sql).await?.check()?;
++			(0..response.num_statements()).map(|i| response.take(i).map_err(Into::into)).collect()
++		} else {
++			let session = Session::owner().with_ns("bench").with_db("bench");
++			self.ds
++				.execute(sql, &session, None)
++				.await?
++				.into_iter()
++				.map(|r| r.output().map_err(Into::into))
++				.collect()
++		}
++	}
++
++	async fn close(self) -> Result<()> {
++		let Self {
++			ds,
++			sdk,
++			cancel,
++		} = self;
++		if sdk.is_some() {
++			cancel.cancel();
++			drop(sdk);
++			// The SDK router resolves background tasks and shuts the datastore
++			// down before releasing its final datastore reference.
++			runtime::time::timeout(Duration::from_secs(30), async {
++				while Arc::strong_count(&ds) > 1 {
++					runtime::time::sleep(Duration::from_millis(1)).await;
++				}
++			})
++			.await
++			.context("SDK router/background tasks did not terminate")?;
++		} else {
++			ds.shutdown().await?;
++		}
++		drop(ds);
++		Ok(())
++	}
++}
++
++#[derive(Clone)]
++struct Args {
++	backend: String,
++	path: String,
++	access: String,
++	workload: String,
++	parallelism: usize,
++	lanes: usize,
++	records: usize,
++	warmup: f64,
++	seconds: f64,
++	seed: u64,
++	verify: bool,
++}
++impl Args {
++	fn parse() -> Result<Self> {
++		let mut map = HashMap::new();
++		let mut args = std::env::args().skip(1);
++		while let Some(key) = args.next() {
++			if key == "--verify" {
++				map.insert(key, "true".into());
++			} else {
++				map.insert(key, args.next().context("missing CLI argument value")?);
++			}
++		}
++		let get = |key: &str, default: &str| map.get(key).cloned().unwrap_or(default.into());
++		let this = Self {
++			backend: get("--backend", "memory"),
++			path: get("--path", "runtime-bench.db"),
++			access: get("--access", "sdk"),
++			workload: get("--workload", "read"),
++			parallelism: get("--parallelism", "4").parse()?,
++			lanes: get("--lanes", "16").parse()?,
++			records: get("--records", "100000").parse()?,
++			warmup: get("--warmup", "3").parse()?,
++			seconds: get("--seconds", "10").parse()?,
++			seed: get("--seed", "20260917").parse()?,
++			verify: map.contains_key("--verify"),
++		};
++		ensure!(
++			this.parallelism > 0
++				&& this.lanes > 0
++				&& this.records >= this.lanes
++				&& this.records >= 64,
++			"invalid concurrency/record count"
++		);
++		ensure!(matches!(this.backend.as_str(), "memory" | "rocksdb"), "unknown backend");
++		ensure!(matches!(this.access.as_str(), "sdk" | "core"), "unknown access path");
++		ensure!(
++			matches!(this.workload.as_str(), "read" | "create" | "update" | "mixed" | "range"),
++			"unknown workload"
++		);
++		Ok(this)
++	}
++	fn endpoint(&self) -> String {
++		if self.backend == "memory" {
++			"memory".into()
++		} else {
++			format!("rocksdb://{}", self.path)
++		}
++	}
++}
++
++async fn seed(client: &Client, records: usize, seed: u64) -> Result<()> {
++	client.query("DEFINE TABLE bench SCHEMALESS; DEFINE INDEX by_n ON bench FIELDS n;").await?;
++	for start in (0..records).step_by(1000) {
++		let mut sql = "INSERT INTO bench [".to_string();
++		for id in start..(start + 1000).min(records) {
++			if id != start {
++				sql.push(',');
++			}
++			sql.push_str(&format!(
++				"{{id:bench:{id},n:{id},payload:'{}',version:0}}",
++				payload(id as u64, seed)
++			));
++		}
++		sql.push_str("] RETURN NONE;");
++		client.query(&sql).await.context("seed records")?;
++	}
++	let count = client.query("SELECT count() AS total FROM bench GROUP ALL").await?;
++	ensure!(
++		count.last().unwrap().get(0).get("total").clone().into_t::<u64>()? == records as u64,
++		"seed row count mismatch: {count:?}"
++	);
++	Ok(())
++}
++
++fn xorshift(state: &mut u64) -> u64 {
++	*state ^= *state << 13;
++	*state ^= *state >> 7;
++	*state ^= *state << 17;
++	*state
++}
++
++fn payload(id: u64, seed: u64) -> String {
++	const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
++	let mut state = seed.wrapping_add(id.wrapping_mul(0x9e3779b97f4a7c15)).max(1);
++	(0..960)
++		.map(|_| ALPHABET[(xorshift(&mut state) % ALPHABET.len() as u64) as usize] as char)
++		.collect()
++}
++
++fn query_for(args: &Args, lane: usize, iteration: u64, random: u64, warm: bool) -> String {
++	let keys = (args.records - lane + args.lanes - 1) / args.lanes;
++	let id = lane as u64 + (random % keys as u64) * args.lanes as u64;
++	let workload = if args.workload == "mixed" {
++		if random % 5 == 0 {
++			"update"
++		} else {
++			"read"
++		}
++	} else {
++		&args.workload
++	};
++	match workload {
++		"read" => format!("SELECT * FROM bench:{id}"),
++		"update" => format!("UPDATE bench:{id} SET version += 1 RETURN NONE"),
++		"create" => {
++			let id = args.records as u64
++				+ lane as u64 * 1_000_000_000
++				+ iteration + if warm {
++				1_000_000_000_000
++			} else {
++				0
++			};
++			format!(
++				"CREATE bench:{id} SET n={id},payload='{}',version=0 RETURN NONE",
++				payload(id, args.seed)
++			)
++		}
++		"range" => {
++			let start = random % (args.records as u64 - 32);
++			format!(
++				"SELECT id,n FROM bench WHERE n >= {start} AND n < {} ORDER BY n LIMIT 32",
++				start + 32
++			)
++		}
++		_ => unreachable!(),
++	}
++}
++
++async fn phase(client: &Client, args: &Args, warm: bool) -> Result<(u64, Histogram<u64>, f64)> {
++	let duration = Duration::from_secs_f64(if warm {
++		args.warmup
++	} else {
++		args.seconds
++	});
++	let barrier = Arc::new(tokio::sync::Barrier::new(args.lanes + 1));
++	let timing = Arc::new(OnceLock::new());
++	let mut tasks = Vec::new();
++	for lane in 0..args.lanes {
++		let client = client.clone();
++		let args = args.clone();
++		let barrier = barrier.clone();
++		let timing: Arc<OnceLock<Instant>> = timing.clone();
++		tasks.push(runtime::spawn(async move {
++			let mut histogram = Histogram::<u64>::new(3)?;
++			let mut random = args.seed.wrapping_add(31 * lane as u64 + 1);
++			let mut ops = 0u64;
++			barrier.wait().await;
++			let deadline = *timing.get().unwrap() + duration;
++			while Instant::now() < deadline {
++				let sql = query_for(&args, lane, ops, xorshift(&mut random), warm);
++				let start = Instant::now();
++				let result = client.query(&sql).await?;
++				let nanos = start.elapsed().as_nanos().min(u64::MAX as u128) as u64;
++				if !warm {
++					histogram.record(nanos.max(1))?;
++				}
++				if args.workload == "read" || args.workload == "range" {
++					ensure!(
++						!result.last().context("no statement result")?.is_empty(),
++						"unexpected empty read"
++					);
++				}
++				black_box(result);
++				ops += 1;
++				runtime::consume_budget().await;
++			}
++			Ok::<_, anyhow::Error>((ops, histogram))
++		}));
++	}
++	let start = Instant::now();
++	timing.set(start).unwrap();
++	barrier.wait().await;
++	let mut total = 0;
++	let mut histogram = Histogram::<u64>::new(3)?;
++	for task in tasks {
++		let (ops, samples) = task.await??;
++		total += ops;
++		histogram.add(&samples)?;
++	}
++	Ok((total, histogram, start.elapsed().as_secs_f64()))
++}
++
++async fn verify(args: &Args) -> Result<serde_json::Value> {
++	let client = Client::open(args).await?;
++	client.query("DEFINE TABLE checks SCHEMALESS; DEFINE INDEX by_n ON checks FIELDS n;").await?;
++	client.query("CREATE checks:one SET n=1; CREATE checks:two SET n=2;").await?;
++	let values = client.query("SELECT VALUE n FROM checks ORDER BY n").await?;
++	ensure!(
++		values[0].get(0).clone().into_t::<u64>()? == 1
++			&& values[0].get(1).clone().into_t::<u64>()? == 2,
++		"create/read mismatch"
++	);
++	client.query("UPDATE checks:one SET n=3;").await?;
++	// An explicitly cancelled transaction reports an error for its statements.
++	let _ =
++		client.query("BEGIN TRANSACTION; UPDATE checks:one SET n=99; CANCEL TRANSACTION;").await;
++	let after = client.query("SELECT VALUE n FROM checks:one").await?;
++	ensure!(after[0].get(0).clone().into_t::<u64>()? == 3, "rollback lost original value");
++	let indexed =
++		client.query("SELECT VALUE n FROM checks WITH INDEX by_n WHERE n >= 2 ORDER BY n").await?;
++	ensure!(
++		indexed[0].get(0).clone().into_t::<u64>()? == 2
++			&& indexed[0].get(1).clone().into_t::<u64>()? == 3,
++		"index query mismatch"
++	);
++	client.query("DELETE checks:two;").await?;
++	ensure!(client.query("SELECT * FROM checks:two").await?[0].is_empty(), "delete failed");
++	client.query("SLEEP 2ms;").await?;
++	let timeout = client.query("SELECT * FROM checks WHERE sleep(1s) = NONE TIMEOUT 5ms;").await;
++	let error = timeout.expect_err("query timeout unexpectedly succeeded");
++	ensure!(
++		error.to_string().contains("exceeded the timeout"),
++		"unexpected timeout error: {error:#}"
++	);
++	let cancellation = surrealdb_core::ctx::CancelHandle::new();
++	let request_cancel = cancellation.clone();
++	let datastore = client.ds.clone();
++	let request = runtime::spawn(async move {
++		datastore
++			.execute_with_cancel(
++				"SLEEP 60s; CREATE checks:cancelled SET n=999;",
++				&Session::owner().with_ns("bench").with_db("bench"),
++				None,
++				request_cancel,
++			)
++			.await
++	});
++	runtime::time::sleep(Duration::from_millis(10)).await;
++	cancellation.trip();
++	let cancelled = runtime::time::timeout(Duration::from_secs(5), request).await??;
++	let cancellation_messages: Vec<String> = match cancelled {
++		Ok(responses) => {
++			responses.into_iter().filter_map(|r| r.output().err().map(|e| e.to_string())).collect()
++		}
++		Err(error) => vec![error.to_string()],
++	};
++	ensure!(
++		cancellation_messages.iter().any(|e| e.contains("cancel")),
++		"cancellation did not propagate: {cancellation_messages:?}"
++	);
++	ensure!(
++		client.query("SELECT * FROM checks:cancelled").await?[0].is_empty(),
++		"cancelled query performed a write"
++	);
++	// Let the normal SDK membership refresh interval fire at least once.
++	runtime::time::sleep(Duration::from_millis(3100)).await;
++	client.close().await?;
++	if args.backend == "rocksdb" {
++		let reopened = Client::open(args).await?;
++		let persisted = reopened.query("SELECT VALUE n FROM checks:one").await?;
++		ensure!(persisted[0].get(0).clone().into_t::<u64>()? == 3, "reopen lost committed data");
++		reopened.close().await?;
++	}
++	Ok(
++		json!({"kind":"verification", "passed":true, "backend":args.backend, "access":args.access, "parallelism":args.parallelism, "checks":["crud","rollback","index","sleep","query_timeout","external_cancellation","background_shutdown","reopen_if_rocksdb"]}),
++	)
++}
++
++fn handoffs() -> u64 {
++	#[cfg(feature = "runtime-goexec")]
++	{
++		HANDLE.get().unwrap().metrics().handoffs
++	}
++	#[cfg(not(feature = "runtime-goexec"))]
++	{
++		0
++	}
++}
++
++async fn run(args: Args) -> Result<serde_json::Value> {
++	if args.verify {
++		return verify(&args).await;
++	}
++	let init = Instant::now();
++	let client = Client::open(&args).await?;
++	seed(&client, args.records, args.seed).await?;
++	let setup_seconds = init.elapsed().as_secs_f64();
++	let (warm_ops, _, _) = phase(&client, &args, true).await?;
++	let before_handoffs = handoffs();
++	let before_granted =
++		client.ds.collect_u64_metric("rocksdb.inline_blocking_granted").unwrap_or(0);
++	let before_diverted =
++		client.ds.collect_u64_metric("rocksdb.inline_blocking_diverted").unwrap_or(0);
++	let (ops, histogram, seconds) = phase(&client, &args, false).await?;
++	let handoffs = handoffs() - before_handoffs;
++	let granted = client.ds.collect_u64_metric("rocksdb.inline_blocking_granted").unwrap_or(0)
++		- before_granted;
++	let diverted = client.ds.collect_u64_metric("rocksdb.inline_blocking_diverted").unwrap_or(0)
++		- before_diverted;
++	if args.workload == "create" {
++		let count = client.query("SELECT count() AS total FROM bench GROUP ALL").await?;
++		ensure!(
++			count[0].get(0).get("total").clone().into_t::<u64>()?
++				== args.records as u64 + warm_ops + ops,
++			"created row count mismatch"
++		);
++	}
++	client.close().await?;
++	Ok(
++		json!({"kind":"benchmark", "backend":args.backend,"access":args.access,"workload":args.workload,"parallelism":args.parallelism,"lanes":args.lanes,"records":args.records,"seed":args.seed,"setup_seconds":setup_seconds,"warmup_ops":warm_ops,"operations":ops,"seconds":seconds,"ops_per_second":ops as f64/seconds,"p50_ns":histogram.value_at_quantile(0.5),"p99_ns":histogram.value_at_quantile(0.99),"errors":0,"handoffs":handoffs,"rocksdb_granted":granted,"rocksdb_diverted":diverted}),
++	)
++}
++
++fn main() -> Result<()> {
++	let args = Args::parse()?;
++	rayon::ThreadPoolBuilder::new().num_threads(args.parallelism).build_global()?;
++	let parallelism = args.parallelism;
++	#[cfg(feature = "runtime-goexec")]
++	let report = {
++		let rt = goexec::Runtime::builder().parallelism(parallelism).max_threads(512).build()?;
++		HANDLE.set(rt.handle()).ok().unwrap();
++		let report = rt.block_on(async move { run(args).await });
++		ensure!(rt.shutdown_timeout(Duration::from_secs(30)), "goexec shutdown timed out");
++		report?
++	};
++	#[cfg(not(feature = "runtime-goexec"))]
++	let report = {
++		let rt = tokio::runtime::Builder::new_multi_thread()
++			.worker_threads(parallelism)
++			.max_blocking_threads(512 - parallelism)
++			.enable_all()
++			.build()?;
++		let report = rt.block_on(async move { tokio::spawn(run(args)).await })?;
++		rt.shutdown_timeout(Duration::from_secs(30));
++		report?
++	};
++	println!("{}", serde_json::to_string(&report)?);
++	Ok(())
++}
+diff --git a/surrealdb/Cargo.toml b/surrealdb/Cargo.toml
+index 59e0e7d..3de98fb 100644
+--- a/surrealdb/Cargo.toml
++++ b/surrealdb/Cargo.toml
+@@ -14,6 +14,8 @@ categories.workspace = true
+ license-file.workspace = true
+ 
+ [features]
++runtime-goexec = ["surrealdb-core/runtime-goexec"]
++goexec-blocking = ["runtime-goexec", "surrealdb-core/goexec-blocking"]
+ # Public features
+ default = ["protocol-ws", "rustls"]
+ allocator = ["surrealdb-core/allocator"]
+@@ -116,6 +118,7 @@ tokio-tungstenite = { workspace = true, optional = true, features = ["url"] }
+ uuid = { workspace = true, features = ["serde", "v4", "v7"] }
+ 
+ [dev-dependencies]
++goexec = { git = "https://github.com/dudykr/ddbase.git", rev = "e57e96903c7c33a1c38fb34ee3c2ff11ed579145", features = ["time"] }
+ ciborium.workspace = true
+ criterion = { workspace = true, features = ["async_tokio"] }
+ env_logger.workspace = true
+diff --git a/surrealdb/benches/sdb_benches/lib/mod.rs b/surrealdb/benches/sdb_benches/lib/mod.rs
+index 0b3cdfa..e06e9a9 100644
+--- a/surrealdb/benches/sdb_benches/lib/mod.rs
++++ b/surrealdb/benches/sdb_benches/lib/mod.rs
+@@ -16,7 +16,11 @@ pub(super) async fn init(target: &str) {
+ 	match target {
+ 		#[cfg(feature = "kv-mem")]
+ 		"lib-mem" => {
+-			let ds = Datastore::new("memory").await.unwrap();
++			let ds = Datastore::builder()
++				.with_runtime_worker_threads(*super::WORKER_THREADS)
++				.build_with_path("memory")
++				.await
++				.unwrap();
+ 			// Define namespace and database for benchmarks
+ 			ds.execute("DEFINE NAMESPACE test", &Session::owner(), None)
+ 				.await
+@@ -36,7 +40,11 @@ pub(super) async fn init(target: &str) {
+ 					.as_millis()
+ 			);
+ 			println!("\n### Using path: {} ###\n", path);
+-			let ds = Datastore::new(&path).await.unwrap();
++			let ds = Datastore::builder()
++				.with_runtime_worker_threads(*super::WORKER_THREADS)
++				.build_with_path(&path)
++				.await
++				.unwrap();
+ 			// Define namespace and database for benchmarks
+ 			ds.execute("DEFINE NAMESPACE test", &Session::owner(), None)
+ 				.await
+@@ -56,7 +64,11 @@ pub(super) async fn init(target: &str) {
+ 					.as_millis()
+ 			);
+ 			println!("\n### Using path: {} ###\n", path);
+-			let ds = Datastore::new(&path).await.unwrap();
++			let ds = Datastore::builder()
++				.with_runtime_worker_threads(*super::WORKER_THREADS)
++				.build_with_path(&path)
++				.await
++				.unwrap();
+ 			// Define namespace and database for benchmarks
+ 			ds.execute("DEFINE NAMESPACE test", &Session::owner(), None)
+ 				.await
+@@ -75,7 +87,8 @@ pub(super) fn benchmark_group(c: &mut Criterion, target: String) {
+ 	let num_ops = *super::NUM_OPS;
+ 	let runtime = super::rt();
+ 
+-	runtime.block_on(async { init(&target).await });
++	let init_target = target.clone();
++	runtime.block_on(async move { init(&init_target).await });
+ 
+ 	let mut group = c.benchmark_group(target);
+ 
+diff --git a/surrealdb/benches/sdb_benches/lib/routines/create.rs b/surrealdb/benches/sdb_benches/lib/routines/create.rs
+index ad93079..a8150ac 100644
+--- a/surrealdb/benches/sdb_benches/lib/routines/create.rs
++++ b/surrealdb/benches/sdb_benches/lib/routines/create.rs
+@@ -4,9 +4,10 @@ use std::sync::Arc;
+ 
+ use surrealdb_core::dbs::Session;
+ use surrealdb_core::kvs::Datastore;
+-use tokio::runtime::Runtime;
+-use tokio::task::JoinSet;
+ 
++use crate::sdb_benches::{JoinSet, Runtime};
++
++#[derive(Clone)]
+ pub struct Create {
+ 	runtime: &'static Runtime,
+ 	table_name: String,
+@@ -23,10 +24,11 @@ impl Create {
+ 
+ impl super::Routine for Create {
+ 	fn setup(&self, ds: Arc<Datastore>, session: Session, _num_ops: usize) {
+-		self.runtime.block_on(async {
++		let this = self.clone();
++		self.runtime.block_on(async move {
+ 			// Create table
+ 			let mut res = ds
+-				.execute(format!("DEFINE TABLE {}", &self.table_name).as_str(), &session, None)
++				.execute(format!("DEFINE TABLE {}", &this.table_name).as_str(), &session, None)
+ 				.await
+ 				.expect("[setup] define table failed");
+ 			let _ = res.remove(0).output().expect("[setup] the create operation returned no value");
+@@ -34,13 +36,14 @@ impl super::Routine for Create {
+ 	}
+ 
+ 	fn run(&self, ds: Arc<Datastore>, session: Session, num_ops: usize) {
+-		self.runtime.block_on(async {
++		let this = self.clone();
++		self.runtime.block_on(async move {
+ 			// Spawn one task for each operation
+ 			let mut tasks = JoinSet::default();
+ 			for _ in 0..num_ops {
+ 				let ds = Arc::clone(&ds);
+ 				let session = session.clone();
+-				let table_name = self.table_name.clone();
++				let table_name = this.table_name.clone();
+ 
+ 				tasks.spawn_on(
+ 					async move {
+@@ -66,7 +69,7 @@ impl super::Routine for Create {
+ 							panic!("[setup] Record not found");
+ 						}
+ 					},
+-					self.runtime.handle(),
++					this.runtime.handle(),
+ 				);
+ 			}
+ 
+@@ -77,9 +80,10 @@ impl super::Routine for Create {
+ 	}
+ 
+ 	fn cleanup(&self, ds: Arc<Datastore>, session: Session, _num_ops: usize) {
+-		self.runtime.block_on(async {
++		let this = self.clone();
++		self.runtime.block_on(async move {
+ 			let mut res = ds
+-				.execute(format!("REMOVE TABLE {}", self.table_name).as_str(), &session, None)
++				.execute(format!("REMOVE TABLE {}", this.table_name).as_str(), &session, None)
+ 				.await
+ 				.expect("[cleanup] remove table failed");
+ 			let _ =
+diff --git a/surrealdb/benches/sdb_benches/lib/routines/read.rs b/surrealdb/benches/sdb_benches/lib/routines/read.rs
+index 4c15afe..fe63e6f 100644
+--- a/surrealdb/benches/sdb_benches/lib/routines/read.rs
++++ b/surrealdb/benches/sdb_benches/lib/routines/read.rs
+@@ -4,9 +4,10 @@ use std::sync::Arc;
+ 
+ use surrealdb_core::dbs::Session;
+ use surrealdb_core::kvs::Datastore;
+-use tokio::runtime::Runtime;
+-use tokio::task::JoinSet;
+ 
++use crate::sdb_benches::{JoinSet, Runtime};
++
++#[derive(Clone)]
+ pub struct Read {
+ 	runtime: &'static Runtime,
+ 	table_name: String,
+@@ -23,10 +24,11 @@ impl Read {
+ 
+ impl super::Routine for Read {
+ 	fn setup(&self, ds: Arc<Datastore>, session: Session, num_ops: usize) {
+-		self.runtime.block_on(async {
++		let this = self.clone();
++		self.runtime.block_on(async move {
+ 			// Create table
+ 			let mut res = ds
+-				.execute(format!("DEFINE TABLE {}", &self.table_name).as_str(), &session, None)
++				.execute(format!("DEFINE TABLE {}", &this.table_name).as_str(), &session, None)
+ 				.await
+ 				.expect("[setup] define table failed");
+ 			let _ = res.remove(0).output().expect("[setup] the create operation returned no value");
+@@ -36,7 +38,7 @@ impl super::Routine for Read {
+ 			for task_id in 0..num_ops {
+ 				let ds = Arc::clone(&ds);
+ 				let session = session.clone();
+-				let table_name = self.table_name.clone();
++				let table_name = this.table_name.clone();
+ 
+ 				tasks.spawn_on(
+ 					async move {
+@@ -62,7 +64,7 @@ impl super::Routine for Read {
+ 							panic!("[setup] Record not found");
+ 						}
+ 					},
+-					self.runtime.handle(),
++					this.runtime.handle(),
+ 				);
+ 			}
+ 
+@@ -73,13 +75,14 @@ impl super::Routine for Read {
+ 	}
+ 
+ 	fn run(&self, ds: Arc<Datastore>, session: Session, num_ops: usize) {
+-		self.runtime.block_on(async {
++		let this = self.clone();
++		self.runtime.block_on(async move {
+ 			// Spawn one task for each operation
+ 			let mut tasks = JoinSet::default();
+ 			for task_id in 0..num_ops {
+ 				let ds = Arc::clone(&ds);
+ 				let session = session.clone();
+-				let table_name = self.table_name.clone();
++				let table_name = this.table_name.clone();
+ 
+ 				tasks.spawn_on(
+ 					async move {
+@@ -106,7 +109,7 @@ impl super::Routine for Read {
+ 							panic!("[run] Record not found");
+ 						}
+ 					},
+-					self.runtime.handle(),
++					this.runtime.handle(),
+ 				);
+ 			}
+ 
+@@ -117,9 +120,10 @@ impl super::Routine for Read {
+ 	}
+ 
+ 	fn cleanup(&self, ds: Arc<Datastore>, session: Session, _num_ops: usize) {
+-		self.runtime.block_on(async {
++		let this = self.clone();
++		self.runtime.block_on(async move {
+ 			let mut res = ds
+-				.execute(format!("REMOVE TABLE {}", self.table_name).as_str(), &session, None)
++				.execute(format!("REMOVE TABLE {}", this.table_name).as_str(), &session, None)
+ 				.await
+ 				.expect("[cleanup] remove table failed");
+ 			let _ =
+diff --git a/surrealdb/benches/sdb_benches/mod.rs b/surrealdb/benches/sdb_benches/mod.rs
+index 57c54bf..29848b0 100644
+--- a/surrealdb/benches/sdb_benches/mod.rs
++++ b/surrealdb/benches/sdb_benches/mod.rs
+@@ -3,7 +3,14 @@
+ use std::sync::{LazyLock, OnceLock};
+ 
+ use criterion::Criterion;
++#[cfg(feature = "runtime-goexec")]
++use goexec::Runtime;
++#[cfg(feature = "runtime-goexec")]
++use goexec_tasks::JoinSet;
++#[cfg(not(feature = "runtime-goexec"))]
+ use tokio::runtime::Runtime;
++#[cfg(not(feature = "runtime-goexec"))]
++use tokio::task::JoinSet;
+ 
+ mod lib;
+ mod sdk;
+@@ -22,11 +29,18 @@ static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+ 
+ fn rt() -> &'static Runtime {
+ 	RUNTIME.get_or_init(|| {
+-		tokio::runtime::Builder::new_multi_thread()
+-			.worker_threads(*WORKER_THREADS)
+-			.enable_all()
+-			.build()
+-			.unwrap()
++		#[cfg(feature = "runtime-goexec")]
++		{
++			Runtime::builder().parallelism(*WORKER_THREADS).max_threads(512).build().unwrap()
++		}
++		#[cfg(not(feature = "runtime-goexec"))]
++		{
++			tokio::runtime::Builder::new_multi_thread()
++				.worker_threads(*WORKER_THREADS)
++				.enable_all()
++				.build()
++				.unwrap()
++		}
+ 	})
+ }
+ 
+@@ -43,3 +57,41 @@ pub(super) fn benchmark_group(c: &mut Criterion, target: String) {
+ 		t => panic!("Target '{}' not supported.", t),
+ 	}
+ }
++
++#[cfg(feature = "runtime-goexec")]
++mod goexec_tasks {
++	use futures::StreamExt;
++	use futures::stream::FuturesUnordered;
++	pub struct JoinSet<T> {
++		tasks: FuturesUnordered<goexec::JoinHandle<T>>,
++	}
++	impl<T> Default for JoinSet<T> {
++		fn default() -> Self {
++			Self {
++				tasks: FuturesUnordered::new(),
++			}
++		}
++	}
++	impl<T: Send + 'static> JoinSet<T> {
++		pub fn spawn<F: std::future::Future<Output = T> + Send + 'static>(&mut self, future: F) {
++			self.tasks.push(goexec::spawn(future));
++		}
++		pub fn spawn_on<F: std::future::Future<Output = T> + Send + 'static>(
++			&mut self,
++			future: F,
++			handle: goexec::Handle,
++		) {
++			self.tasks.push(handle.spawn(future));
++		}
++		pub async fn join_next(&mut self) -> Option<Result<T, goexec::JoinError>> {
++			self.tasks.next().await
++		}
++	}
++	impl<T> Drop for JoinSet<T> {
++		fn drop(&mut self) {
++			for task in self.tasks.iter() {
++				task.abort();
++			}
++		}
++	}
++}
+diff --git a/surrealdb/benches/sdb_benches/sdk/mod.rs b/surrealdb/benches/sdb_benches/sdk/mod.rs
+index 2f70856..bde0a29 100644
+--- a/surrealdb/benches/sdb_benches/sdk/mod.rs
++++ b/surrealdb/benches/sdb_benches/sdk/mod.rs
+@@ -61,7 +61,8 @@ pub(super) fn benchmark_group(c: &mut Criterion, target: String) {
+ 	let num_ops = *super::NUM_OPS;
+ 	let runtime = super::rt();
+ 
+-	runtime.block_on(async { init(&target).await });
++	let init_target = target.clone();
++	runtime.block_on(async move { init(&init_target).await });
+ 
+ 	let mut group = c.benchmark_group(target);
+ 
+diff --git a/surrealdb/benches/sdb_benches/sdk/routines/create.rs b/surrealdb/benches/sdb_benches/sdk/routines/create.rs
+index f489d3d..d2a8a17 100644
+--- a/surrealdb/benches/sdb_benches/sdk/routines/create.rs
++++ b/surrealdb/benches/sdb_benches/sdk/routines/create.rs
+@@ -3,11 +3,11 @@
+ use surrealdb::Surreal;
+ use surrealdb::engine::any::Any;
+ use surrealdb_types::RecordIdKey;
+-use tokio::runtime::Runtime;
+-use tokio::task::JoinSet;
+ 
+ use crate::sdb_benches::sdk::Record;
++use crate::sdb_benches::{JoinSet, Runtime};
+ 
++#[derive(Clone)]
+ pub struct Create {
+ 	runtime: &'static Runtime,
+ 	table_name: String,
+@@ -26,17 +26,18 @@ impl super::Routine for Create {
+ 	fn setup(&self, _client: &'static Surreal<Any>, _num_ops: usize) {}
+ 
+ 	fn run(&self, client: &'static Surreal<Any>, num_ops: usize) {
+-		self.runtime.block_on(async {
++		let this = self.clone();
++		self.runtime.block_on(async move {
+ 			let data = Record {
+ 				field: RecordIdKey::rand(),
+ 			};
+ 
+-			client.query(format!("DEFINE TABLE {}", self.table_name)).await.unwrap();
++			client.query(format!("DEFINE TABLE {}", this.table_name)).await.unwrap();
+ 
+ 			// Spawn one task for each operation
+ 			let mut tasks = JoinSet::default();
+ 			for _ in 0..num_ops {
+-				let table_name = self.table_name.clone();
++				let table_name = this.table_name.clone();
+ 				let data = data.clone();
+ 
+ 				tasks.spawn(async move {
+@@ -59,9 +60,10 @@ impl super::Routine for Create {
+ 	}
+ 
+ 	fn cleanup(&self, client: &'static Surreal<Any>, _num_ops: usize) {
+-		self.runtime.block_on(async {
++		let this = self.clone();
++		self.runtime.block_on(async move {
+ 			client
+-				.query(format!("REMOVE TABLE {}", self.table_name))
++				.query(format!("REMOVE TABLE {}", this.table_name))
+ 				.await
+ 				.expect("[cleanup] remove table failed");
+ 		});
+diff --git a/surrealdb/benches/sdb_benches/sdk/routines/read.rs b/surrealdb/benches/sdb_benches/sdk/routines/read.rs
+index 75db939..a135023 100644
+--- a/surrealdb/benches/sdb_benches/sdk/routines/read.rs
++++ b/surrealdb/benches/sdb_benches/sdk/routines/read.rs
+@@ -3,11 +3,11 @@
+ use surrealdb::Surreal;
+ use surrealdb::engine::any::Any;
+ use surrealdb_types::RecordIdKey;
+-use tokio::runtime::Runtime;
+-use tokio::task::JoinSet;
+ 
+ use crate::sdb_benches::sdk::Record;
++use crate::sdb_benches::{JoinSet, Runtime};
+ 
++#[derive(Clone)]
+ pub struct Read {
+ 	runtime: &'static Runtime,
+ 	table_name: String,
+@@ -24,12 +24,13 @@ impl Read {
+ 
+ impl super::Routine for Read {
+ 	fn setup(&self, client: &'static Surreal<Any>, num_ops: usize) {
+-		self.runtime.block_on(async {
+-			client.query(format!("DEFINE TABLE {}", self.table_name)).await.unwrap();
++		let this = self.clone();
++		self.runtime.block_on(async move {
++			client.query(format!("DEFINE TABLE {}", this.table_name)).await.unwrap();
+ 			// Spawn one task for each operation
+ 			let mut tasks = JoinSet::default();
+ 			for task_id in 0..num_ops {
+-				let table_name = self.table_name.clone();
++				let table_name = this.table_name.clone();
+ 
+ 				tasks.spawn(async move {
+ 					let _: Option<Record> = client
+@@ -50,11 +51,12 @@ impl super::Routine for Read {
+ 	}
+ 
+ 	fn run(&self, client: &'static Surreal<Any>, num_ops: usize) {
+-		self.runtime.block_on(async {
++		let this = self.clone();
++		self.runtime.block_on(async move {
+ 			// Spawn one task for each operation
+ 			let mut tasks = JoinSet::default();
+ 			for task_id in 0..num_ops {
+-				let table_name = self.table_name.clone();
++				let table_name = this.table_name.clone();
+ 
+ 				tasks.spawn(async move {
+ 					let _: Option<Record> = std::hint::black_box(
+@@ -74,9 +76,10 @@ impl super::Routine for Read {
+ 	}
+ 
+ 	fn cleanup(&self, client: &'static Surreal<Any>, _num_ops: usize) {
+-		self.runtime.block_on(async {
++		let this = self.clone();
++		self.runtime.block_on(async move {
+ 			client
+-				.query(format!("REMOVE table {}", self.table_name))
++				.query(format!("REMOVE table {}", this.table_name))
+ 				.await
+ 				.expect("[cleanup] remove table failed")
+ 				.check()
+diff --git a/surrealdb/core/Cargo.toml b/surrealdb/core/Cargo.toml
+index a7ff099..19e9aee 100644
+--- a/surrealdb/core/Cargo.toml
++++ b/surrealdb/core/Cargo.toml
+@@ -14,6 +14,8 @@ categories.workspace = true
+ license-file.workspace = true
+ 
+ [features]
++runtime-goexec = ["dep:goexec"]
++goexec-blocking = ["runtime-goexec"]
+ # Public features
+ default = ["kv-mem", "graphql", "gql"]
+ kv-mem = [
+@@ -69,6 +71,7 @@ features = ["kv-mem", "kv-rocksdb", "http", "scripting", "graphql", "gql"]
+ targets = []
+ 
+ [dependencies]
++goexec = { git = "https://github.com/dudykr/ddbase.git", rev = "e57e96903c7c33a1c38fb34ee3c2ff11ed579145", features = ["time"], optional = true }
+ surrealdb-strand = { workspace = true }
+ 
+ # External surreal crates
+diff --git a/surrealdb/core/src/dbs/executor.rs b/surrealdb/core/src/dbs/executor.rs
+index ab09581..8ed68e4 100644
+--- a/surrealdb/core/src/dbs/executor.rs
++++ b/surrealdb/core/src/dbs/executor.rs
+@@ -7,8 +7,6 @@ use anyhow::{Result, anyhow, bail};
+ use futures::{Stream, StreamExt};
+ use reblessive::TreeStack;
+ use surrealdb_types::{Error as TypesError, QueryError, ToSql};
+-#[cfg(not(target_family = "wasm"))]
+-use tokio::spawn;
+ use tracing::instrument;
+ #[cfg(target_family = "wasm")]
+ use wasm_bindgen_futures::spawn_local as spawn;
+@@ -37,6 +35,8 @@ use crate::observe::{
+ 	StatementEventSafe, StatementType,
+ };
+ use crate::rpc::types_error_from_anyhow;
++#[cfg(not(target_family = "wasm"))]
++use crate::runtime::spawn;
+ use crate::val::{Array, Value, convert_value_to_public_value};
+ use crate::{err, expr, sql};
+ 
+@@ -107,7 +107,7 @@ impl Executor {
+ 			receiver,
+ 			delivery,
+ 		} = prepared;
+-		spawn(async move {
++		let _task = spawn(async move {
+ 			while let Ok(item) = receiver.recv().await {
+ 				delivery.send(item).await;
+ 			}
+@@ -485,7 +485,7 @@ impl Executor {
+ 
+ 		/// Guard that aborts a spawned task when dropped, ensuring the
+ 		/// timeout task is cleaned up when execution finishes or errors.
+-		struct AbortOnDrop(tokio::task::JoinHandle<()>);
++		struct AbortOnDrop(crate::runtime::task::JoinHandle<()>);
+ 		impl Drop for AbortOnDrop {
+ 			fn drop(&mut self) {
+ 				self.0.abort();
+@@ -513,8 +513,8 @@ impl Executor {
+ 		// AbortOnDrop ensures the task is cleaned up when execution finishes.
+ 		let _timeout_guard = self.ctx.timeout().map(|timeout| {
+ 			let token = cancellation.clone();
+-			AbortOnDrop(tokio::spawn(async move {
+-				tokio::time::sleep(timeout).await;
++			AbortOnDrop(crate::runtime::spawn(async move {
++				crate::runtime::time::sleep(timeout).await;
+ 				token.cancel();
+ 			}))
+ 		});
+@@ -1034,7 +1034,7 @@ impl Executor {
+ 
+ 		let exec_result = match kvs.transaction_timeout() {
+ 			Some(timeout) => {
+-				match tokio::time::timeout(
++				match crate::runtime::time::timeout(
+ 					timeout,
+ 					self.execute_plan_in_transaction(Arc::clone(&txn), start, plan),
+ 				)
+@@ -1162,7 +1162,7 @@ impl Executor {
+ 		match kvs.transaction_timeout() {
+ 			Some(timeout) => {
+ 				let start_results = self.results.len();
+-				match tokio::time::timeout(
++				match crate::runtime::time::timeout(
+ 					timeout,
+ 					self.execute_begin_statement_inner(kvs, Arc::clone(&txn), stream),
+ 				)
+diff --git a/surrealdb/core/src/dbs/file.rs b/surrealdb/core/src/dbs/file.rs
+index e951346..d09ae82 100644
+--- a/surrealdb/core/src/dbs/file.rs
++++ b/surrealdb/core/src/dbs/file.rs
+@@ -9,12 +9,12 @@ use rand::Rng as _;
+ use rand::seq::SliceRandom as _;
+ use revision::{DeserializeRevisioned, SerializeRevisioned};
+ use tempfile::{Builder, TempDir};
+-#[cfg(not(target_family = "wasm"))]
+-use tokio::task::spawn_blocking;
+ 
+ use crate::dbs::plan::Explanation;
+ use crate::err::Error;
+ use crate::expr::order::Ordering;
++#[cfg(not(target_family = "wasm"))]
++use crate::runtime::task::spawn_blocking;
+ use crate::val::Value;
+ 
+ pub(super) struct FileCollector {
+@@ -54,7 +54,7 @@ impl FileCollector {
+ 	pub(super) async fn push(&mut self, value: Value) -> Result<(), Error> {
+ 		if let Some(mut writer) = self.writer.take() {
+ 			#[cfg(not(target_family = "wasm"))]
+-			let writer = spawn_blocking(move || {
++			let writer = crate::runtime::spawn_io(move || {
+ 				writer.push(&value)?;
+ 				Ok::<FileWriter, Error>(writer)
+ 			})
+diff --git a/surrealdb/core/src/dbs/store.rs b/surrealdb/core/src/dbs/store.rs
+index 213ca3c..a8f158a 100644
+--- a/surrealdb/core/src/dbs/store.rs
++++ b/surrealdb/core/src/dbs/store.rs
+@@ -7,13 +7,13 @@ use rand::Rng;
+ use rand::seq::SliceRandom;
+ #[cfg(not(target_family = "wasm"))]
+ use rayon::prelude::ParallelSliceMut;
+-#[cfg(not(target_family = "wasm"))]
+-use tokio::task::spawn_blocking;
+ 
+ use crate::dbs::plan::Explanation;
+ #[cfg(not(target_family = "wasm"))]
+ use crate::err::Error;
+ use crate::expr::order::OrderList;
++#[cfg(not(target_family = "wasm"))]
++use crate::runtime::task::spawn_blocking;
+ use crate::val::Value;
+ 
+ #[derive(Default, Debug)]
+diff --git a/surrealdb/core/src/doc/event.rs b/surrealdb/core/src/doc/event.rs
+index 93ed1dc..280ba9c 100644
+--- a/surrealdb/core/src/doc/event.rs
++++ b/surrealdb/core/src/doc/event.rs
+@@ -6,8 +6,6 @@ use reblessive::TreeStack;
+ use reblessive::tree::Stk;
+ use revision::revisioned;
+ use surrealdb_strand::Strand;
+-#[cfg(not(target_family = "wasm"))]
+-use tokio::spawn;
+ 
+ use crate::catalog::providers::{DatabaseProvider, NamespaceProvider};
+ use crate::catalog::{EventDefinition, Record};
+@@ -25,6 +23,8 @@ use crate::kvs::{
+ 	Datastore, HlcTimeStamp, KVValue, Key, LockType, NORMAL_BATCH_SIZE, Transaction,
+ 	TransactionFactory, TransactionType, Val, impl_kv_value_revisioned,
+ };
++#[cfg(not(target_family = "wasm"))]
++use crate::runtime::spawn;
+ use crate::val::{RecordId, Value};
+ 
+ impl Document {
+diff --git a/surrealdb/core/src/exec/buffer.rs b/surrealdb/core/src/exec/buffer.rs
+index 8ff411f..dda1ca6 100644
+--- a/surrealdb/core/src/exec/buffer.rs
++++ b/surrealdb/core/src/exec/buffer.rs
+@@ -105,7 +105,7 @@ pub(crate) fn buffer_stream(
+ #[cfg(not(target_family = "wasm"))]
+ fn spawn_buffered(stream: ValueBatchStream, buffer_size: usize) -> ValueBatchStream {
+ 	let (tx, rx) = async_channel::bounded(buffer_size);
+-	let handle = tokio::spawn(async move {
++	let handle = crate::runtime::spawn(async move {
+ 		futures::pin_mut!(stream);
+ 		while let Some(item) = futures::StreamExt::next(&mut stream).await {
+ 			if tx.send(item).await.is_err() {
+@@ -128,7 +128,7 @@ struct SpawnedBufferedStream {
+ 	/// Channel receiver yielding batches from the spawned task.
+ 	rx: ValueBatchStream,
+ 	/// Handle to the spawned producer task — aborted on drop.
+-	handle: tokio::task::JoinHandle<()>,
++	handle: crate::runtime::task::JoinHandle<()>,
+ }
+ 
+ #[cfg(not(target_family = "wasm"))]
+diff --git a/surrealdb/core/src/exec/function/builtin/sleep.rs b/surrealdb/core/src/exec/function/builtin/sleep.rs
+index 1b60d92..8b8dfdf 100644
+--- a/surrealdb/core/src/exec/function/builtin/sleep.rs
++++ b/surrealdb/core/src/exec/function/builtin/sleep.rs
+@@ -31,7 +31,7 @@ async fn sleep_impl(ctx: &EvalContext<'_>, args: Vec<Value>) -> Result<Value> {
+ 
+ 	// Sleep with cancellation support
+ 	tokio::select! {
+-		_ = tokio::time::sleep(duration.0) => Ok(Value::None),
++		_ = crate::runtime::time::sleep(duration.0) => Ok(Value::None),
+ 		_ = cancellation.cancelled() => {
+ 			// Cancelled, return None without error
+ 			Ok(Value::None)
+diff --git a/surrealdb/core/src/exec/operators/sleep.rs b/surrealdb/core/src/exec/operators/sleep.rs
+index 7e7bf40..0c4be90 100644
+--- a/surrealdb/core/src/exec/operators/sleep.rs
++++ b/surrealdb/core/src/exec/operators/sleep.rs
+@@ -89,7 +89,7 @@ impl ExecOperator for SleepPlan {
+ 
+ 			#[cfg(not(target_family = "wasm"))]
+ 			tokio::select! {
+-				_ = tokio::time::sleep(effective_duration) => {},
++				_ = crate::runtime::time::sleep(effective_duration) => {},
+ 				_ = ctx.cancellation().cancelled() => {},
+ 			}
+ 
+diff --git a/surrealdb/core/src/exec/operators/sort/external.rs b/surrealdb/core/src/exec/operators/sort/external.rs
+index 49c5a71..7dd99c2 100644
+--- a/surrealdb/core/src/exec/operators/sort/external.rs
++++ b/surrealdb/core/src/exec/operators/sort/external.rs
+@@ -13,7 +13,6 @@ use std::sync::Arc;
+ use ext_sort::{ExternalSorter, ExternalSorterBuilder, LimitedBufferBuilder};
+ use futures::StreamExt;
+ use tempfile::Builder;
+-use tokio::task::spawn_blocking;
+ 
+ use super::common::{OrderByField, SortDirection, compare_keys};
+ use super::external_common::{KeyedValue, KeyedValueExternalChunk, TempFileReader, TempFileWriter};
+@@ -24,6 +23,7 @@ use crate::exec::{
+ 	buffer_stream, monitor_stream,
+ };
+ use crate::expr::ControlFlowExt;
++use crate::runtime::task::spawn_blocking;
+ use crate::val::Value;
+ 
+ /// External merge sort operator for disk-based sorting.
+@@ -198,7 +198,7 @@ impl ExecOperator for ExternalSort {
+ 
+ 					// Use spawn_blocking for file I/O
+ 					let mut w = writer;
+-					w = spawn_blocking(move || {
++					w = crate::runtime::spawn_io(move || {
+ 						w.push(&keyed)?;
+ 						Ok::<TempFileWriter, Error>(w)
+ 					})
+diff --git a/surrealdb/core/src/exec/operators/sort/external_by_key.rs b/surrealdb/core/src/exec/operators/sort/external_by_key.rs
+index 74154e5..d541b6e 100644
+--- a/surrealdb/core/src/exec/operators/sort/external_by_key.rs
++++ b/surrealdb/core/src/exec/operators/sort/external_by_key.rs
+@@ -15,7 +15,6 @@ use std::sync::Arc;
+ use ext_sort::{ExternalSorter, ExternalSorterBuilder, LimitedBufferBuilder};
+ use futures::StreamExt;
+ use tempfile::Builder;
+-use tokio::task::spawn_blocking;
+ 
+ use super::common::{SortDirection, SortKey, compare_keys_by_sort_key};
+ use super::external_common::{KeyedValue, KeyedValueExternalChunk, TempFileReader, TempFileWriter};
+@@ -25,6 +24,7 @@ use crate::exec::{
+ 	OperatorMetrics, ValueBatch, ValueBatchStream, buffer_stream, monitor_stream,
+ };
+ use crate::expr::ControlFlowExt;
++use crate::runtime::task::spawn_blocking;
+ use crate::val::Value;
+ 
+ /// External merge sort keyed on pre-extracted `FieldPath` values.
+@@ -154,7 +154,7 @@ impl ExecOperator for ExternalSortByKey {
+ 					};
+ 
+ 					let mut w = writer;
+-					w = spawn_blocking(move || {
++					w = crate::runtime::spawn_io(move || {
+ 						w.push(&keyed)?;
+ 						Ok::<TempFileWriter, Error>(w)
+ 					})
+diff --git a/surrealdb/core/src/exec/operators/sort/full_sort.rs b/surrealdb/core/src/exec/operators/sort/full_sort.rs
+index d674aed..b450c6e 100644
+--- a/surrealdb/core/src/exec/operators/sort/full_sort.rs
++++ b/surrealdb/core/src/exec/operators/sort/full_sort.rs
+@@ -13,8 +13,6 @@ use std::sync::Arc;
+ use futures::StreamExt;
+ #[cfg(not(target_family = "wasm"))]
+ use rayon::prelude::{IntoParallelIterator, ParallelIterator, ParallelSliceMut};
+-#[cfg(not(target_family = "wasm"))]
+-use tokio::task::spawn_blocking;
+ 
+ use super::common::{OrderByField, SortDirection, SortKey, compare_keys, compare_keys_by_sort_key};
+ use crate::exec::{
+@@ -24,6 +22,8 @@ use crate::exec::{
+ };
+ #[cfg(not(target_family = "wasm"))]
+ use crate::expr::ControlFlowExt;
++#[cfg(not(target_family = "wasm"))]
++use crate::runtime::task::spawn_blocking;
+ use crate::val::Value;
+ 
+ /// Sorts the input stream by the specified ORDER BY fields.
+diff --git a/surrealdb/core/src/exec/operators/sort/shuffle.rs b/surrealdb/core/src/exec/operators/sort/shuffle.rs
+index dce368d..3e07d8e 100644
+--- a/surrealdb/core/src/exec/operators/sort/shuffle.rs
++++ b/surrealdb/core/src/exec/operators/sort/shuffle.rs
+@@ -10,13 +10,13 @@ use std::sync::Arc;
+ use futures::StreamExt;
+ use rand::Rng;
+ use rand::seq::SliceRandom;
+-#[cfg(not(target_family = "wasm"))]
+-use tokio::task::spawn_blocking;
+ 
+ use crate::exec::{
+ 	AccessMode, CardinalityHint, ContextLevel, ExecOperator, ExecutionContext, FlowResult,
+ 	OperatorMetrics, ValueBatch, ValueBatchStream, buffer_stream, monitor_stream,
+ };
++#[cfg(not(target_family = "wasm"))]
++use crate::runtime::task::spawn_blocking;
+ use crate::val::Value;
+ 
+ /// Randomly shuffles the input stream.
+diff --git a/surrealdb/core/src/exec/operators/timeout.rs b/surrealdb/core/src/exec/operators/timeout.rs
+index 7c14c0c..388b5f3 100644
+--- a/surrealdb/core/src/exec/operators/timeout.rs
++++ b/surrealdb/core/src/exec/operators/timeout.rs
+@@ -122,19 +122,19 @@ impl ExecOperator for Timeout {
+ 			let std_duration: std::time::Duration = duration.0;
+ 
+ 			// Create a timeout future
+-			let timeout_instant = tokio::time::Instant::now() + std_duration;
++			let timeout_instant = crate::runtime::time::Instant::now() + std_duration;
+ 
+ 			futures::pin_mut!(input_stream);
+ 
+ 			loop {
+ 				// Check if we've exceeded the timeout
+-				let remaining = timeout_instant.saturating_duration_since(tokio::time::Instant::now());
++				let remaining = timeout_instant.saturating_duration_since(crate::runtime::time::Instant::now());
+ 				if remaining.is_zero() {
+ 					Err(ControlFlow::Err(anyhow::anyhow!(Error::QueryTimedout(duration))))?;
+ 				}
+ 
+ 				// Wait for next batch with timeout
+-				let batch_result = tokio::time::timeout(
++				let batch_result = crate::runtime::time::timeout(
+ 					remaining,
+ 					input_stream.next()
+ 				).await;
+diff --git a/surrealdb/core/src/expr/statements/sleep.rs b/surrealdb/core/src/expr/statements/sleep.rs
+index 23d4696..f47b32a 100644
+--- a/surrealdb/core/src/expr/statements/sleep.rs
++++ b/surrealdb/core/src/expr/statements/sleep.rs
+@@ -1,11 +1,11 @@
+ use anyhow::Result;
+-use tokio::time::timeout;
+ 
+ use crate::ctx::FrozenContext;
+ use crate::dbs::Options;
+ use crate::doc::CursorDoc;
+ use crate::expr::Base;
+ use crate::iam::{Action, ResourceKind};
++use crate::runtime::time::timeout;
+ use crate::val::{Duration, Value};
+ 
+ #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash)]
+@@ -46,7 +46,7 @@ impl SleepStatement {
+ 		#[cfg(target_family = "wasm")]
+ 		let sleep_fut = wasmtimer::tokio::sleep(self.duration.0);
+ 		#[cfg(not(target_family = "wasm"))]
+-		let sleep_fut = tokio::time::sleep(self.duration.0);
++		let sleep_fut = crate::runtime::time::sleep(self.duration.0);
+ 		match ctx.cancel_token() {
+ 			Some(token) => {
+ 				tokio::select! {
+diff --git a/surrealdb/core/src/fnc/sleep.rs b/surrealdb/core/src/fnc/sleep.rs
+index ffbba2d..0dbe84b 100644
+--- a/surrealdb/core/src/fnc/sleep.rs
++++ b/surrealdb/core/src/fnc/sleep.rs
+@@ -5,7 +5,7 @@ use crate::val::{Duration, Value};
+ 
+ /// Sleep during the provided duration parameter.
+ ///
+-/// Races `tokio::time::sleep` against the context's awaitable
++/// Races `crate::runtime::time::sleep` against the context's awaitable
+ /// cancellation token (when installed by the RPC layer) so a client
+ /// disconnect mid-sleep wakes us up immediately instead of blocking
+ /// the executor's drain for the full duration. After the select
+@@ -23,7 +23,7 @@ pub async fn sleep(ctx: &FrozenContext, (dur,): (Duration,)) -> Result<Value> {
+ 	#[cfg(target_family = "wasm")]
+ 	let sleep_fut = wasmtimer::tokio::sleep(dur);
+ 	#[cfg(not(target_family = "wasm"))]
+-	let sleep_fut = tokio::time::sleep(dur);
++	let sleep_fut = crate::runtime::time::sleep(dur);
+ 	match ctx.cancel_token() {
+ 		Some(token) => {
+ 			tokio::select! {
+diff --git a/surrealdb/core/src/kvs/ds.rs b/surrealdb/core/src/kvs/ds.rs
+index b9d6cf9..9de482a 100644
+--- a/surrealdb/core/src/kvs/ds.rs
++++ b/surrealdb/core/src/kvs/ds.rs
+@@ -23,10 +23,7 @@ use futures::{Future, Stream};
+ use rand::Rng;
+ use reblessive::TreeStack;
+ use surrealdb_types::{AuthError, Error as TypesError, SurrealValue, object};
+-#[cfg(not(target_family = "wasm"))]
+-use tokio::spawn;
+ use tokio::sync::Notify;
+-use tokio::time::{Instant, sleep, timeout, timeout_at};
+ use tokio_util::sync::CancellationToken;
+ use tracing::{debug, instrument, trace, warn};
+ use uuid::Uuid;
+@@ -96,6 +93,9 @@ use crate::kvs::{
+ };
+ use crate::lq::LiveQueryRouter;
+ use crate::observe::{ExecutionObserver, NoopObserver};
++#[cfg(not(target_family = "wasm"))]
++use crate::runtime::spawn;
++use crate::runtime::time::{Instant, sleep, timeout, timeout_at};
+ use crate::sql::Ast;
+ #[cfg(feature = "surrealism")]
+ use crate::surrealism::cache::SurrealismCache;
+@@ -3113,7 +3113,7 @@ impl Datastore {
+ 	#[cfg(not(target_family = "wasm"))]
+ 	async fn await_index_compaction_handle(
+ 		ikb: &IndexKeyBase,
+-		handle: &mut tokio::task::JoinHandle<Result<()>>,
++		handle: &mut crate::runtime::task::JoinHandle<Result<()>>,
+ 		canceller: &CancellationToken,
+ 	) {
+ 		match handle.await {
+@@ -3132,7 +3132,7 @@ impl Datastore {
+ 
+ 	#[cfg(not(target_family = "wasm"))]
+ 	async fn await_index_compaction_handles(
+-		handles: &mut Vec<(IndexKeyBase, tokio::task::JoinHandle<Result<()>>)>,
++		handles: &mut Vec<(IndexKeyBase, crate::runtime::task::JoinHandle<Result<()>>)>,
+ 		canceller: &CancellationToken,
+ 	) {
+ 		while let Some((ikb, mut handle)) = handles.pop() {
+@@ -3175,7 +3175,7 @@ impl Datastore {
+ 			}
+ 		}
+ 		let mut error_count = 0;
+-		let mut handles: Vec<(IndexKeyBase, tokio::task::JoinHandle<Result<()>>)> =
++		let mut handles: Vec<(IndexKeyBase, crate::runtime::task::JoinHandle<Result<()>>)> =
+ 			Vec::with_capacity(compacted_indexes.len());
+ 		for (ikb, _) in compacted_indexes {
+ 			if let Err(e) = Self::ensure_not_cancelled(&canceller) {
+@@ -3212,7 +3212,7 @@ impl Datastore {
+ 
+ 	/// Compacts each distinct index referenced by the given queue keys.
+ 	///
+-	/// On wasm, `tokio::spawn` is unavailable so compactions run
++	/// On wasm, `crate::runtime::spawn` is unavailable so compactions run
+ 	/// sequentially. A [`HashSet`] is used to skip duplicate queue entries
+ 	/// for the same index. Failures are logged but do not abort the loop,
+ 	/// matching the non-wasm behavior so that a single transient failure
+diff --git a/surrealdb/core/src/kvs/index/admission.rs b/surrealdb/core/src/kvs/index/admission.rs
+index fb1f322..4bd4638 100644
+--- a/surrealdb/core/src/kvs/index/admission.rs
++++ b/surrealdb/core/src/kvs/index/admission.rs
+@@ -1,6 +1,5 @@
+ use anyhow::Result;
+ use chrono::Utc;
+-use tokio::time::sleep;
+ 
+ use super::builder::{IndexKey, IndexMutation};
+ use super::state::{catalog_still_references_index, is_condition_not_met};
+@@ -20,6 +19,7 @@ use crate::kvs::tx::{
+ 	CachedIndexBuildReservationKey, CachedIndexBuildReservationLookup, IndexBuildReservationRelease,
+ };
+ use crate::kvs::{KVKey, KVValue, TransactionType};
++use crate::runtime::time::sleep;
+ use crate::val::TableName;
+ 
+ /// Resolved slot in a per-(user-txn, index) reservation under which a single
+diff --git a/surrealdb/core/src/kvs/index/builder.rs b/surrealdb/core/src/kvs/index/builder.rs
+index f8b7ed1..b27968b 100644
+--- a/surrealdb/core/src/kvs/index/builder.rs
++++ b/surrealdb/core/src/kvs/index/builder.rs
+@@ -6,10 +6,7 @@ use std::time::Duration;
+ use anyhow::{Result, ensure};
+ use chrono::Utc;
+ use futures::channel::oneshot::{Receiver, Sender, channel};
+-#[cfg(not(target_family = "wasm"))]
+-use tokio::spawn;
+ use tokio::sync::RwLock;
+-use tokio::time::sleep;
+ use uuid::Uuid;
+ #[cfg(target_family = "wasm")]
+ use wasm_bindgen_futures::spawn_local as spawn;
+@@ -45,6 +42,9 @@ use crate::kvs::{
+ 	TransactionType, is_retryable_transaction_conflict, is_shutdown_error,
+ };
+ use crate::mem::ALLOC;
++#[cfg(not(target_family = "wasm"))]
++use crate::runtime::spawn;
++use crate::runtime::time::sleep;
+ use crate::val::{RecordId, RecordIdKey, TableName, Value};
+ 
+ /// Process-local key used only to deduplicate active builder tasks.
+@@ -194,7 +194,7 @@ impl IndexBuilder {
+ 			indexes.insert(Arc::clone(&building.ix_key), Arc::clone(&building));
+ 		}
+ 		let b = Arc::clone(&building);
+-		spawn(async move {
++		let _task = spawn(async move {
+ 			let guard = BuildingFinishGuard(Arc::clone(&b));
+ 			let r = b.run_acquired(acquired).await;
+ 			let generation = b.build_generation.load(Ordering::Acquire);
+diff --git a/surrealdb/core/src/kvs/index/replay.rs b/surrealdb/core/src/kvs/index/replay.rs
+index 9f99407..238bcd1 100644
+--- a/surrealdb/core/src/kvs/index/replay.rs
++++ b/surrealdb/core/src/kvs/index/replay.rs
+@@ -7,7 +7,6 @@ use chrono::Utc;
+ use reblessive::TreeStack;
+ use revision::revisioned;
+ use serde::{Deserialize, Serialize};
+-use tokio::time::sleep;
+ use uuid::Uuid;
+ use web_time::Instant;
+ 
+@@ -34,6 +33,7 @@ use crate::kvs::{
+ 	INDEXING_BATCH_SIZE, Key, Transaction, Val, impl_kv_value_revisioned,
+ 	is_retryable_transaction_conflict,
+ };
++use crate::runtime::time::sleep;
+ use crate::val::{RecordId, RecordIdKey, Value};
+ 
+ #[revisioned(revision = 2)]
+diff --git a/surrealdb/core/src/kvs/mem/mod.rs b/surrealdb/core/src/kvs/mem/mod.rs
+index 86383eb..de9f71a 100644
+--- a/surrealdb/core/src/kvs/mem/mod.rs
++++ b/surrealdb/core/src/kvs/mem/mod.rs
+@@ -939,7 +939,7 @@ mod tests {
+ 			if check() {
+ 				return true;
+ 			}
+-			tokio::time::sleep(Duration::from_millis(50)).await;
++			crate::runtime::time::sleep(Duration::from_millis(50)).await;
+ 		}
+ 		false
+ 	}
+diff --git a/surrealdb/core/src/kvs/rocksdb/inline_guard.rs b/surrealdb/core/src/kvs/rocksdb/inline_guard.rs
+index 669f17c..e1f4e2b 100644
+--- a/surrealdb/core/src/kvs/rocksdb/inline_guard.rs
++++ b/surrealdb/core/src/kvs/rocksdb/inline_guard.rs
+@@ -22,6 +22,7 @@ use tokio::sync::{SemaphorePermit, TryAcquireError};
+ /// `RocksDbConfig::runtime_reserve`.
+ pub(super) struct InlineGuard {
+ 	#[cfg(not(target_family = "wasm"))]
++	#[cfg_attr(feature = "goexec-blocking", allow(dead_code))]
+ 	permits: Semaphore,
+ 	/// Cached permit cap, set once at construction. Used by the `Drop`
+ 	/// observability hook below; the live cap is otherwise read off the
+@@ -98,6 +99,12 @@ impl InlineGuard {
+ 		F: FnOnce() -> R + Send + 'a,
+ 		R: Send + 'a,
+ 	{
++		#[cfg(feature = "goexec-blocking")]
++		{
++			self.granted.fetch_add(1, Ordering::Relaxed);
++			goexec::blocking(op)
++		}
++		#[cfg(not(feature = "goexec-blocking"))]
+ 		match self.permits.try_acquire() {
+ 			Ok(_permit) => {
+ 				self.granted.fetch_add(1, Ordering::Relaxed);
+@@ -110,6 +117,10 @@ impl InlineGuard {
+ 		}
+ 	}
+ 
++	pub(super) fn capacity(&self) -> u64 {
++		self.max_permits as u64
++	}
++
+ 	/// Cumulative number of storage calls that ran inline on a tokio
+ 	/// worker (permit granted). Per-datastore counter, surfaced via the
+ 	/// rocksdb metric registry.
+diff --git a/surrealdb/core/src/kvs/rocksdb/mod.rs b/surrealdb/core/src/kvs/rocksdb/mod.rs
+index f29f3e2..ace747a 100644
+--- a/surrealdb/core/src/kvs/rocksdb/mod.rs
++++ b/surrealdb/core/src/kvs/rocksdb/mod.rs
+@@ -621,6 +621,7 @@ impl Datastore {
+ 		// the property lookup so the per-flavour registry exposes both
+ 		// shapes uniformly.
+ 		match metric {
++			"rocksdb.inline_blocking_cap" => return Some(self.inline_guard.capacity()),
+ 			Self::INLINE_BLOCKING_GRANTED => return Some(self.inline_guard.granted()),
+ 			Self::INLINE_BLOCKING_DIVERTED => return Some(self.inline_guard.diverted()),
+ 			_ => {}
+@@ -1385,7 +1386,7 @@ async fn drain_cursors(tx: &Transaction) {
+ 	let mut escalated = false;
+ 	let mut yields: u32 = 0;
+ 	while tx.cursors_alive.load(Ordering::SeqCst) > 0 {
+-		tokio::task::yield_now().await;
++		crate::runtime::task::yield_now().await;
+ 		yields = yields.wrapping_add(1);
+ 		// Cheap mask check — only consult the wall clock once per ~1024
+ 		// yields so the hot path (drain completing in 0–1 yields) is
+diff --git a/surrealdb/core/src/kvs/sequences.rs b/surrealdb/core/src/kvs/sequences.rs
+index 1c5fced..c883b03 100644
+--- a/surrealdb/core/src/kvs/sequences.rs
++++ b/surrealdb/core/src/kvs/sequences.rs
+@@ -29,7 +29,6 @@ use rand::Rng;
+ use revision::revisioned;
+ use serde::{Deserialize, Serialize};
+ use tokio::sync::{Mutex, RwLock};
+-use tokio::time::sleep;
+ use uuid::Uuid;
+ use web_time::Instant;
+ 
+@@ -52,6 +51,7 @@ use crate::key::table::ih::IndexIdGeneratorBatchKey;
+ use crate::key::table::is::IndexIdGeneratorStateKey;
+ use crate::kvs::ds::TransactionFactory;
+ use crate::kvs::{KVKey, LockType, Transaction, TransactionType, impl_kv_value_revisioned};
++use crate::runtime::time::sleep;
+ use crate::val::TableName;
+ 
+ type SequencesMap = Arc<RwLock<HashMap<Arc<SequenceDomain>, Arc<Mutex<Sequence>>>>>;
+diff --git a/surrealdb/core/src/kvs/tasklease.rs b/surrealdb/core/src/kvs/tasklease.rs
+index 23b15b1..fb2dd49 100644
+--- a/surrealdb/core/src/kvs/tasklease.rs
++++ b/surrealdb/core/src/kvs/tasklease.rs
+@@ -6,7 +6,6 @@ use chrono::{DateTime, Duration, Utc};
+ use rand::Rng;
+ use revision::revisioned;
+ use serde::{Deserialize, Serialize};
+-use tokio::time::sleep;
+ use tokio_util::sync::CancellationToken;
+ use tracing::trace;
+ use uuid::Uuid;
+@@ -19,6 +18,7 @@ use crate::kvs::sequences::Sequences;
+ use crate::kvs::{
+ 	Error as KvsError, LockType, Transaction, TransactionType, impl_kv_value_revisioned,
+ };
++use crate::runtime::time::sleep;
+ 
+ #[derive(Debug, Clone)]
+ pub(crate) enum TaskLeaseType {
+diff --git a/surrealdb/core/src/kvs/tx.rs b/surrealdb/core/src/kvs/tx.rs
+index d5e31b5..cac8469 100644
+--- a/surrealdb/core/src/kvs/tx.rs
++++ b/surrealdb/core/src/kvs/tx.rs
+@@ -21,7 +21,6 @@ use std::time::Duration;
+ use anyhow::Result;
+ use chrono::Utc;
+ use tokio::sync::{Mutex, Notify};
+-use tokio::time::sleep;
+ use tracing::Instrument;
+ use uuid::Uuid;
+ use web_time::Instant;
+@@ -73,6 +72,7 @@ use crate::observe::{
+ 	ExecutionObserver, Outcome, TenantIdentity, TransactionEvent, TransactionEventSafe,
+ 	TransactionMetrics,
+ };
++use crate::runtime::time::sleep;
+ use crate::val::{RecordId, RecordIdKey, TableName};
+ 
+ /// Controls whether `get_records` populates the transaction cache on miss.
+diff --git a/surrealdb/core/src/lib.rs b/surrealdb/core/src/lib.rs
+index b003f10..49128e7 100644
+--- a/surrealdb/core/src/lib.rs
++++ b/surrealdb/core/src/lib.rs
+@@ -42,6 +42,9 @@ pub mod str;
+ mod surrealism;
+ mod sys;
+ 
++#[doc(hidden)]
++pub mod runtime;
++
+ pub mod api;
+ pub mod catalog;
+ pub mod cnf;
+diff --git a/surrealdb/core/src/mac/mod.rs b/surrealdb/core/src/mac/mod.rs
+index ac2dbf4..ef682c0 100644
+--- a/surrealdb/core/src/mac/mod.rs
++++ b/surrealdb/core/src/mac/mod.rs
+@@ -140,9 +140,7 @@ macro_rules! bytes {
+ /// Pauses and yields execution to the tokio runtime
+ macro_rules! yield_now {
+ 	() => {
+-		if tokio::runtime::Handle::try_current().is_ok() {
+-			tokio::task::consume_budget().await;
+-		}
++		$crate::runtime::consume_budget().await
+ 	};
+ }
+ 
+diff --git a/surrealdb/core/src/runtime.rs b/surrealdb/core/src/runtime.rs
+new file mode 100644
+index 0000000..023c13b
+--- /dev/null
++++ b/surrealdb/core/src/runtime.rs
+@@ -0,0 +1,63 @@
++//! Experimental native embedded runtime selection. Synchronization primitives
++//! remain executor independent; task and timer entry points are selected here.
++
++#[cfg(all(feature = "runtime-goexec", target_family = "wasm"))]
++compile_error!("runtime-goexec supports native embedded engines only");
++
++#[cfg(feature = "runtime-goexec")]
++pub use goexec::{spawn, time};
++#[cfg(not(feature = "runtime-goexec"))]
++pub use tokio::{spawn, time};
++
++pub async fn consume_budget() {
++	#[cfg(feature = "runtime-goexec")]
++	goexec::consume_budget().await;
++	#[cfg(not(feature = "runtime-goexec"))]
++	if tokio::runtime::Handle::try_current().is_ok() {
++		tokio::task::consume_budget().await;
++	}
++}
++
++#[cfg(not(feature = "runtime-goexec"))]
++pub use tokio::task;
++
++#[cfg(feature = "runtime-goexec")]
++pub mod task {
++	pub use goexec::{JoinError, JoinHandle, yield_now};
++
++	/// Preserve a separate CPU pool for synchronous sorting and mixed external
++	/// sorting. Never label CPU work as a goexec blocking syscall.
++	pub fn spawn_blocking<F, R>(f: F) -> JoinHandle<R>
++	where
++		F: FnOnce() -> R + Send + 'static,
++		R: Send + 'static,
++	{
++		let (send, recv) = futures::channel::oneshot::channel();
++		rayon::spawn(move || {
++			let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
++			let _ = send.send(result);
++		});
++		goexec::spawn(async move {
++			match recv.await.expect("blocking producer dropped") {
++				Ok(value) => value,
++				Err(panic) => std::panic::resume_unwind(panic),
++			}
++		})
++	}
++}
++
++/// Spawn an independently progressing owned file-I/O operation.
++pub fn spawn_io<F, R>(f: F) -> task::JoinHandle<R>
++where
++	F: FnOnce() -> R + Send + 'static,
++	R: Send + 'static,
++{
++	#[cfg(feature = "runtime-goexec")]
++	{
++		goexec::spawn(async move { goexec::blocking(f) })
++	}
++	#[cfg(not(feature = "runtime-goexec"))]
++	{
++		tokio::task::spawn_blocking(f)
++	}
++}
+diff --git a/surrealdb/src/engine/any/native.rs b/surrealdb/src/engine/any/native.rs
+index 472d184..53d5f18 100644
+--- a/surrealdb/src/engine/any/native.rs
++++ b/surrealdb/src/engine/any/native.rs
+@@ -49,12 +49,13 @@ impl conn::Sealed for Any {
+ 					{
+ 						features.insert(ExtraFeatures::Backup);
+ 						features.insert(ExtraFeatures::LiveQueries);
+-						tokio::spawn(engine::local::native::run_router(
+-							address,
+-							conn_tx,
+-							route_rx,
+-							session_clone.receiver.clone(),
+-						));
++						let _task =
++							surrealdb_core::runtime::spawn(engine::local::native::run_router(
++								address,
++								conn_tx,
++								route_rx,
++								session_clone.receiver.clone(),
++							));
+ 						conn_rx.recv().await.map_err(crate::std_error_to_types_error)??
+ 					}
+ 
+@@ -70,12 +71,13 @@ impl conn::Sealed for Any {
+ 					{
+ 						features.insert(ExtraFeatures::Backup);
+ 						features.insert(ExtraFeatures::LiveQueries);
+-						tokio::spawn(engine::local::native::run_router(
+-							address,
+-							conn_tx,
+-							route_rx,
+-							session_clone.receiver.clone(),
+-						));
++						let _task =
++							surrealdb_core::runtime::spawn(engine::local::native::run_router(
++								address,
++								conn_tx,
++								route_rx,
++								session_clone.receiver.clone(),
++							));
+ 						conn_rx.recv().await.map_err(crate::std_error_to_types_error)??
+ 					}
+ 
+@@ -91,12 +93,13 @@ impl conn::Sealed for Any {
+ 					{
+ 						features.insert(ExtraFeatures::Backup);
+ 						features.insert(ExtraFeatures::LiveQueries);
+-						tokio::spawn(engine::local::native::run_router(
+-							address,
+-							conn_tx,
+-							route_rx,
+-							session_clone.receiver.clone(),
+-						));
++						let _task =
++							surrealdb_core::runtime::spawn(engine::local::native::run_router(
++								address,
++								conn_tx,
++								route_rx,
++								session_clone.receiver.clone(),
++							));
+ 						conn_rx.recv().await.map_err(crate::std_error_to_types_error)??
+ 					}
+ 
+@@ -111,12 +114,13 @@ impl conn::Sealed for Any {
+ 					{
+ 						features.insert(ExtraFeatures::Backup);
+ 						features.insert(ExtraFeatures::LiveQueries);
+-						tokio::spawn(engine::local::native::run_router(
+-							address,
+-							conn_tx,
+-							route_rx,
+-							session_clone.receiver.clone(),
+-						));
++						let _task =
++							surrealdb_core::runtime::spawn(engine::local::native::run_router(
++								address,
++								conn_tx,
++								route_rx,
++								session_clone.receiver.clone(),
++							));
+ 						conn_rx.recv().await.map_err(crate::std_error_to_types_error)??
+ 					}
+ 
+diff --git a/surrealdb/src/engine/local/mod.rs b/surrealdb/src/engine/local/mod.rs
+index a083ae4..b3e236b 100644
+--- a/surrealdb/src/engine/local/mod.rs
++++ b/surrealdb/src/engine/local/mod.rs
+@@ -956,7 +956,7 @@ async fn router(
+ 
+ 			let kvs = Arc::clone(kvs);
+ 			let session = state.session.read().await.clone();
+-			tokio::spawn(async move {
++			let _task = surrealdb_core::runtime::spawn(async move {
+ 				let export = async {
+ 					if let Err(error) = export_file(&kvs, &session, tx, config).await {
+ 						bytes.send(Err(error)).await.ok();
+@@ -985,7 +985,7 @@ async fn router(
+ 
+ 			let kvs = Arc::clone(kvs);
+ 			let session = state.session.read().await.clone();
+-			tokio::spawn(async move {
++			let _task = surrealdb_core::runtime::spawn(async move {
+ 				let export = async {
+ 					if let Err(error) = export_ml(&kvs, &session, tx, config).await {
+ 						bytes.send(Err(error)).await.ok();
+diff --git a/surrealdb/src/engine/local/native.rs b/surrealdb/src/engine/local/native.rs
+index beb9387..997f9ef 100644
+--- a/surrealdb/src/engine/local/native.rs
++++ b/surrealdb/src/engine/local/native.rs
+@@ -40,7 +40,12 @@ impl conn::Sealed for Db {
+ 			let config = address.config.clone();
+ 			let session_clone = session_clone.unwrap_or_else(SessionClone::new);
+ 
+-			tokio::spawn(run_router(address, conn_tx, route_rx, session_clone.receiver.clone()));
++			let _task = surrealdb_core::runtime::spawn(run_router(
++				address,
++				conn_tx,
++				route_rx,
++				session_clone.receiver.clone(),
++			));
+ 
+ 			conn_rx.recv().await.map_err(crate::std_error_to_types_error)??;
+ 
+@@ -77,7 +82,7 @@ impl Surreal<Db> {
+ 		let session_clone = SessionClone::new();
+ 		let recv = session_clone.receiver.clone();
+ 
+-		tokio::spawn(async move {
++		let _task = surrealdb_core::runtime::spawn(async move {
+ 			conn_tx.send(Ok(())).await.ok();
+ 
+ 			let router_state = super::RouterState {
+@@ -238,7 +243,7 @@ async fn router_loop(
+ 				{
+ 					Ok(state) => {
+ 						let kvs = Arc::clone(&router_state.kvs);
+-						tokio::spawn(async move {
++						let _task = surrealdb_core::runtime::spawn(async move {
+ 							match super::router(&kvs, &state, route.request.command)
+ 								.await
+ 							{
+@@ -273,7 +278,7 @@ async fn router_loop(
+ 								let kvs = Arc::clone(&router_state.kvs);
+ 								let vars = state.vars.read().await.clone();
+ 								let session = state.session.read().await.clone();
+-								tokio::spawn(async move {
++								let _task = surrealdb_core::runtime::spawn(async move {
+ 									if sender.send(Ok(notification)).await.is_err() {
+ 										state.live_queries.remove(&live_query_id);
+ 										if let Err(error) =
+diff --git a/surrealdb/src/engine/mod.rs b/surrealdb/src/engine/mod.rs
+index da78e6f..48179a2 100644
+--- a/surrealdb/src/engine/mod.rs
++++ b/surrealdb/src/engine/mod.rs
+@@ -19,9 +19,9 @@ use std::task::{Context, Poll};
+ 
+ use futures::Stream;
+ #[cfg(not(target_family = "wasm"))]
+-use tokio::time::Instant;
++use surrealdb_core::runtime::time::Instant;
+ #[cfg(not(target_family = "wasm"))]
+-use tokio::time::Interval;
++use surrealdb_core::runtime::time::Interval;
+ #[cfg(any(
+ 	feature = "kv-mem",
+ 	feature = "kv-tikv",
+diff --git a/surrealdb/src/engine/tasks.rs b/surrealdb/src/engine/tasks.rs
+index a055449..0c751e5 100644
+--- a/surrealdb/src/engine/tasks.rs
++++ b/surrealdb/src/engine/tasks.rs
+@@ -8,7 +8,7 @@ use surrealdb_core::err::{is_query_cancelled, is_query_timedout};
+ use surrealdb_core::kvs::Datastore;
+ use surrealdb_core::options::EngineOptions;
+ #[cfg(not(target_family = "wasm"))]
+-use tokio::{spawn, time, time::MissedTickBehavior};
++use surrealdb_core::runtime::{spawn, time, time::MissedTickBehavior};
+ use tokio_util::sync::CancellationToken;
+ #[cfg(target_family = "wasm")]
+ use wasm_bindgen_futures::spawn_local as spawn;
+@@ -19,7 +19,9 @@ use crate::Error;
+ use crate::engine::IntervalStream;
+ 
+ #[cfg(not(target_family = "wasm"))]
+-type Task = Pin<Box<dyn Future<Output = Result<(), tokio::task::JoinError>> + Send + 'static>>;
++type Task = Pin<
++	Box<dyn Future<Output = Result<(), surrealdb_core::runtime::task::JoinError>> + Send + 'static>,
++>;
+ 
+ #[cfg(target_family = "wasm")]
+ type Task = Pin<Box<()>>;
+diff --git a/surrealdb/src/method/live.rs b/surrealdb/src/method/live.rs
+index 3d77add..a2a1298 100644
+--- a/surrealdb/src/method/live.rs
++++ b/surrealdb/src/method/live.rs
+@@ -7,9 +7,9 @@ use std::task::{Context, Poll};
+ 
+ use async_channel::Receiver;
+ use futures::StreamExt;
+-use surrealdb_types::{ConfigurationError, QueryError, SerializationError, ValidationError};
+ #[cfg(not(target_family = "wasm"))]
+-use tokio::spawn;
++use surrealdb_core::runtime::spawn;
++use surrealdb_types::{ConfigurationError, QueryError, SerializationError, ValidationError};
+ use uuid::Uuid;
+ #[cfg(target_family = "wasm")]
+ use wasm_bindgen_futures::spawn_local as spawn;
+@@ -342,7 +342,7 @@ where
+ 	Client: Connection,
+ {
+ 	let client = client.clone();
+-	spawn(async move {
++	let _task = spawn(async move {
+ 		if let Ok(router) = client.inner.router.extract() {
+ 			router
+ 				.execute_unit(

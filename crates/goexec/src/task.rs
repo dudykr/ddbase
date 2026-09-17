@@ -17,7 +17,9 @@ use crate::runtime::{Shared, TaskId};
 
 /// A task was cancelled or panicked.
 pub struct JoinError {
-    panic: Option<Box<dyn Any + Send + 'static>>,
+    // Panic payloads need only be Send. A mutex lets error-reporting libraries
+    // share the error without ever sharing access to the payload itself.
+    panic: Option<parking_lot::Mutex<Box<dyn Any + Send + 'static>>>,
 }
 
 impl JoinError {
@@ -26,7 +28,9 @@ impl JoinError {
     }
 
     fn panicked(panic: Box<dyn Any + Send + 'static>) -> Self {
-        Self { panic: Some(panic) }
+        Self {
+            panic: Some(parking_lot::Mutex::new(panic)),
+        }
     }
 
     /// Whether the task was cancelled, including runtime shutdown.
@@ -41,7 +45,7 @@ impl JoinError {
 
     /// Recover the panic payload. Panics if this is a cancellation error.
     pub fn into_panic(self) -> Box<dyn Any + Send + 'static> {
-        self.panic.expect("task did not panic")
+        self.panic.expect("task did not panic").into_inner()
     }
 }
 
@@ -151,6 +155,7 @@ impl<F: Future> Future for TaskFuture<F> {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         let result = catch_unwind(AssertUnwindSafe(|| {
+            let _budget = crate::coop::enter();
             self.future
                 .as_mut()
                 .expect("task polled after completion")

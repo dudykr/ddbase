@@ -20,16 +20,21 @@
 //! in the **same task** (`join!`, `select!`, or a timeout). Spawn independent
 //! tasks when they must make progress concurrently.
 //!
-//! This crate supplies neither a network/timer driver nor Tokio API
-//! compatibility. The `loom` feature is only for the internal model tests.
+//! The optional `time` feature provides executor-independent timers. This
+//! crate does not provide a network driver or Tokio API compatibility. The
+//! `loom` feature is only for the internal model tests.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+mod coop;
 pub mod fs;
 mod runtime;
 mod state;
 mod task;
+#[cfg(feature = "time")]
+pub mod time;
 
+pub use coop::consume_budget;
 pub use runtime::{blocking, spawn, yield_now, Builder, Handle, Metrics, Runtime};
 pub use task::{JoinError, JoinHandle};

@@ -1,0 +1,49 @@
+{
+  "reason": "User requested stopping the benchmark after sufficient progress; incomplete active process is excluded.",
+  "processes": [
+    {
+      "pid": 21123,
+      "command": [
+        "/bin/zsh",
+        "-c",
+        "target/surrealdb-integration/venv/bin/python crates/goexec/benches/surrealdb/run.py bench --output target/surrealdb-integration/results > target/surrealdb-integration/benchmark.log 2>&1 && target/surrealdb-integration/venv/bin/python crates/goexec/benches/surrealdb/run.py bench --access core --workloads read,create --factors 4 --output target/surrealdb-integration/core-results > target/surrealdb-integration/core-benchmark.log 2>&1 && target/surrealdb-integration/venv/bin/python crates/goexec/benches/surrealdb/run.py classic --output target/surrealdb-integration/classic > target/surrealdb-integration/classic.log 2>&1"
+      ]
+    },
+    {
+      "pid": 21124,
+      "command": [
+        "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python",
+        "crates/goexec/benches/surrealdb/run.py",
+        "bench",
+        "--output",
+        "target/surrealdb-integration/results"
+      ]
+    },
+    {
+      "pid": 41095,
+      "command": [
+        "/Users/kdy/.codex-personal/worktrees/ba0d/ddbase/target/surrealdb-integration/bin/tokio",
+        "--backend",
+        "memory",
+        "--path",
+        "/Users/kdy/.codex-personal/worktrees/ba0d/ddbase/target/surrealdb-integration/results/surreal-7q601sr1/db",
+        "--access",
+        "sdk",
+        "--workload",
+        "read",
+        "--parallelism",
+        "16",
+        "--lanes",
+        "64",
+        "--records",
+        "100000",
+        "--warmup",
+        "3",
+        "--seconds",
+        "10",
+        "--seed",
+        "20260917"
+      ]
+    }
+  ]
+}
