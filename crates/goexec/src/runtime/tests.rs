@@ -99,6 +99,38 @@ fn external_injection_is_not_starved_by_a_self_waking_local_task() {
 }
 
 #[test]
+fn self_waking_local_task_does_not_starve_an_older_sibling() {
+    let rt = Runtime::builder().parallelism(2).build().unwrap();
+    let (started, running) = mpsc::channel();
+    let (resume, resumed) = mpsc::channel();
+    let occupied = rt.spawn(async move {
+        started.send(()).unwrap();
+        // Deliberately retain the other permit, so another worker cannot
+        // rescue the older task and conceal starvation in the LIFO owner.
+        resumed.recv_timeout(TIMEOUT).unwrap();
+    });
+    running.recv_timeout(TIMEOUT).unwrap();
+    rt.block_on(async {
+        let ran = Arc::new(AtomicBool::new(false));
+        let completed = ran.clone();
+        let older = spawn(async move {
+            completed.store(true, Ordering::Release);
+        });
+        for _ in 0..16 {
+            yield_now().await;
+            if ran.load(Ordering::Acquire) {
+                break;
+            }
+        }
+        assert!(ran.load(Ordering::Acquire), "older local work was starved");
+        older.await.unwrap();
+    });
+    resume.send(()).unwrap();
+    futures::executor::block_on(occupied).unwrap();
+    assert!(rt.shutdown_timeout(TIMEOUT));
+}
+
+#[test]
 fn shutdown_cancels_a_continuously_runnable_task() {
     let rt = Runtime::builder().parallelism(1).build().unwrap();
     let handle = rt.handle();
@@ -358,7 +390,7 @@ fn scan(rt: &Runtime) {
 fn existing_workers_can_steal_from_a_newly_added_worker() {
     let rt = runtime(3);
     // Both initial workers take a turn before the third worker exists, so
-    // their cached victim lists initially contain only each other.
+    // their initial victim lists contain only each other.
     let (first, release_first) = blocked(&rt);
     let (entered_second, second_started) = mpsc::channel();
     let (release_second, second_release) = mpsc::channel();
