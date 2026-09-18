@@ -1,32 +1,39 @@
 use std::{
     cell::{Cell, RefCell},
-    collections::{HashMap, VecDeque},
+    collections::VecDeque,
+    fmt,
     future::Future,
     io,
+    marker::PhantomData,
     panic::{catch_unwind, resume_unwind, AssertUnwindSafe},
+    pin::pin,
+    rc::Rc,
     sync::{
         atomic::{fence, AtomicBool, AtomicU64, AtomicUsize, Ordering},
         Arc,
     },
-    task::Poll,
+    task::{Context, Poll},
     thread,
     time::{Duration, Instant},
 };
 
 use async_task::Runnable;
 use crossbeam_deque::{Injector, Steal, Stealer, Worker as LocalQueue};
+use event_listener::{Event, Listener};
 use futures::{
-    channel::oneshot,
     future::{poll_fn, AbortHandle, Abortable},
+    task::{waker_ref, ArcWake},
 };
 use parking_lot::{Condvar, Mutex};
+use slab::Slab;
 
 use crate::{
     state::CallState,
-    task::{JoinError, JoinHandle, TaskFuture},
+    task::{JoinHandle, TaskFuture},
 };
 
 thread_local! {
+    static ENTERED: RefCell<Vec<Handle>> = const { RefCell::new(Vec::new()) };
     static CURRENT: RefCell<Option<WorkerContext>> = const { RefCell::new(None) };
 }
 
@@ -40,6 +47,7 @@ struct WorkerContext {
 struct Worker {
     id: usize,
     call: CallState,
+    blocking_started: AtomicU64,
     returned: Condvar,
     stealer: Stealer<Runnable>,
     polls: AtomicU64,
@@ -51,13 +59,31 @@ struct WorkerEntry {
 }
 
 /// Configure a runtime. There is always at least one spare worker at startup.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Builder {
     parallelism: usize,
     max_threads: Option<usize>,
     handoff_delay: Duration,
+    hooks: ThreadHooks,
     #[cfg(test)]
     manual_monitor: bool,
+}
+
+#[derive(Clone, Default)]
+struct ThreadHooks {
+    start: Option<Arc<dyn Fn() + Send + Sync>>,
+    park: Option<Arc<dyn Fn() + Send + Sync>>,
+    stop: Option<Arc<dyn Fn() + Send + Sync>>,
+}
+
+impl fmt::Debug for Builder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Builder")
+            .field("parallelism", &self.parallelism)
+            .field("max_threads", &self.max_threads)
+            .field("handoff_delay", &self.handoff_delay)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for Builder {
@@ -66,6 +92,7 @@ impl Default for Builder {
             parallelism: thread::available_parallelism().map_or(1, usize::from),
             max_threads: None,
             handoff_delay: Duration::from_micros(100),
+            hooks: ThreadHooks::default(),
             #[cfg(test)]
             manual_monitor: false,
         }
@@ -88,11 +115,35 @@ impl Builder {
         self
     }
 
-    /// Time a syscall generation must remain observed before handoff is
+    /// Minimum elapsed time in an outermost blocking call before handoff is
     /// eligible. Also sets the monitor's inspection interval. Must be
     /// nonzero; OS scheduling means this is not a real-time deadline.
     pub fn handoff_delay(mut self, delay: Duration) -> Self {
         self.handoff_delay = delay;
+        self
+    }
+
+    /// Run a callback when each worker starts, with its runtime context
+    /// installed. Hooks run without scheduler locks. A hook panic closes
+    /// the runtime and requests task cancellation, rather than abandoning a
+    /// worker's bookkeeping.
+    pub fn on_thread_start(mut self, hook: impl Fn() + Send + Sync + 'static) -> Self {
+        self.hooks.start = Some(Arc::new(hook));
+        self
+    }
+
+    /// Run a callback before an idle worker may park. Work is checked again
+    /// after the callback, so the callback does not necessarily precede a
+    /// sleep. This hook does not run around user-marked blocking calls.
+    pub fn on_thread_park(mut self, hook: impl Fn() + Send + Sync + 'static) -> Self {
+        self.hooks.park = Some(Arc::new(hook));
+        self
+    }
+
+    /// Run a callback after a worker has stopped executing tasks and cleared
+    /// its runtime context. Shutdown waits for this hook and TLS destructors.
+    pub fn on_thread_stop(mut self, hook: impl Fn() + Send + Sync + 'static) -> Self {
+        self.hooks.stop = Some(Arc::new(hook));
         self
     }
 
@@ -105,21 +156,26 @@ impl Builder {
             return Err(invalid_config());
         }
         let shared = Arc::new(Shared {
+            clock_origin: Instant::now(),
             parallelism: self.parallelism,
             max_threads,
             handoff_delay: self.handoff_delay,
+            hooks: self.hooks,
             state: Mutex::new(Scheduler::default()),
             ready: Injector::new(),
-            registry: (0..self.parallelism)
+            // External publishers still run concurrently with a single CPU
+            // permit. Keep their registration/removal locks sharded as well.
+            registry: (0..self.parallelism.max(16))
                 .map(|_| Mutex::new(Registry::default()))
                 .collect(),
             next_registry: AtomicUsize::new(0),
             closed: AtomicBool::new(false),
             returning: AtomicBool::new(false),
             wake_needed: AtomicBool::new(false),
+            monitor_parked: AtomicBool::new(false),
             changed: Condvar::new(),
-            work_available: Condvar::new(),
-            monitor_wake: Condvar::new(),
+            work_available: Event::new(),
+            monitor_wake: Event::new(),
             #[cfg(test)]
             manual_monitor: self.manual_monitor,
             #[cfg(test)]
@@ -133,12 +189,15 @@ impl Builder {
             }
             let monitor = shared.clone();
             state.monitor_alive = true;
-            if let Err(error) = thread::Builder::new()
+            match thread::Builder::new()
                 .name("goexec-monitor".into())
                 .spawn(move || monitor.monitor())
             {
-                state.monitor_alive = false;
-                return Err(error);
+                Ok(thread) => state.monitor_thread = Some(thread),
+                Err(error) => {
+                    state.monitor_alive = false;
+                    return Err(error);
+                }
             }
             Ok(())
         })();
@@ -208,6 +267,23 @@ impl Runtime {
         self.shared.metrics()
     }
 
+    /// Cancel tasks and join all workers and the monitor, including their
+    /// thread-local destructors. May wait indefinitely for user code to return.
+    /// Panics on a goexec worker.
+    pub fn shutdown(self) {
+        assert_outside_worker("shutdown");
+        self.shared.close();
+        let mut state = self.shared.state.lock();
+        while state.live_workers != 0 || state.monitor_alive {
+            self.shared.changed.wait(&mut state);
+        }
+        let monitor = state.monitor_thread.take();
+        drop(state);
+        if let Some(monitor) = monitor {
+            let _ = monitor.join();
+        }
+    }
+
     /// Cancel tasks and wait up to `timeout` for workers and the monitor to
     /// exit. Returns false if a running poll/syscall has not finished.
     /// Remaining threads keep their data alive and clean up when execution
@@ -217,12 +293,27 @@ impl Runtime {
         let start = Instant::now();
         self.shared.close();
         let mut state = self.shared.state.lock();
-        while state.live_workers != 0 || state.monitor_alive {
+        while state.live_workers != 0
+            || state.monitor_alive
+            || state
+                .monitor_thread
+                .as_ref()
+                .is_some_and(|thread| !thread.is_finished())
+        {
             let remaining = timeout.saturating_sub(start.elapsed());
             if remaining.is_zero() {
                 return false;
             }
-            self.shared.changed.wait_for(&mut state, remaining);
+            // A thread cannot notify after running its TLS destructors. Once
+            // the monitor is exiting, check its actual completion periodically.
+            self.shared
+                .changed
+                .wait_for(&mut state, remaining.min(Duration::from_millis(1)));
+        }
+        let monitor = state.monitor_thread.take();
+        drop(state);
+        if let Some(monitor) = monitor {
+            let _ = monitor.join();
         }
         true
     }
@@ -241,6 +332,76 @@ pub struct Handle {
 }
 
 impl Handle {
+    /// Get the explicitly entered runtime, or the current worker's runtime.
+    pub fn try_current() -> Option<Self> {
+        ENTERED
+            .with(|entered| entered.borrow().last().cloned())
+            .or_else(|| {
+                CURRENT.with(|current| {
+                    current.borrow().as_ref().map(|context| Self {
+                        shared: context.shared.clone(),
+                    })
+                })
+            })
+    }
+
+    /// Get the current runtime. Panics when no runtime context is available.
+    pub fn current() -> Self {
+        Self::try_current().expect("no current goexec runtime")
+    }
+
+    /// Enter a spawning context on this thread. This does not make the caller
+    /// a worker or grant an execution permit. Guards must be dropped in reverse
+    /// order and cannot be moved to another thread.
+    pub fn enter(&self) -> EnterGuard {
+        let depth = ENTERED.with(|entered| {
+            let mut entered = entered.borrow_mut();
+            entered.push(self.clone());
+            entered.len()
+        });
+        EnterGuard {
+            depth,
+            not_send: PhantomData,
+        }
+    }
+
+    /// The configured number of execution permits (not the OS thread count).
+    pub fn parallelism(&self) -> usize {
+        self.shared.parallelism
+    }
+
+    /// Drive a possibly borrowed, non-Send future on the calling thread.
+    /// Unlike `Runtime::block_on`, this never moves the future to a worker.
+    /// On a worker, only waits between polls are marked blocking, so every
+    /// subsequent poll has reacquired the worker's execution permit.
+    ///
+    /// Nested calls are supported, but not from inside `blocking`: that region
+    /// may already have surrendered its permit and must not poll user futures.
+    pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+        CURRENT.with(|current| {
+            if let Some(context) = current.borrow().as_ref() {
+                assert_eq!(context.depth.get(), 0, "block_on inside goexec::blocking");
+            }
+        });
+        let _entered = self.enter();
+        let parker = Arc::new(Parker::default());
+        let waker = waker_ref(&parker);
+        let mut cx = Context::from_waker(&waker);
+        let mut future = pin!(future);
+        loop {
+            *parker.notified.lock() = false;
+            if let Poll::Ready(value) = future.as_mut().poll(&mut cx) {
+                return value;
+            }
+            blocking(|| {
+                let mut notified = parker.notified.lock();
+                while !*notified {
+                    parker.ready.wait(&mut notified);
+                }
+            });
+        }
+    }
+
     /// Spawn a task. After runtime shutdown, returns an already-cancelled
     /// handle and does not poll the supplied future.
     pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
@@ -254,6 +415,84 @@ impl Handle {
     /// Take a snapshot of runtime counters.
     pub fn metrics(&self) -> Metrics {
         self.shared.metrics()
+    }
+}
+
+/// A thread-bound runtime context. Drop entered contexts in reverse order.
+pub struct EnterGuard {
+    depth: usize,
+    not_send: PhantomData<Rc<()>>,
+}
+
+impl Drop for EnterGuard {
+    fn drop(&mut self) {
+        ENTERED.with(|entered| {
+            let mut entered = entered.borrow_mut();
+            assert_eq!(
+                entered.len(),
+                self.depth,
+                "goexec enter guards dropped out of order"
+            );
+            entered.pop();
+        });
+    }
+}
+
+#[derive(Default)]
+struct Parker {
+    notified: Mutex<bool>,
+    ready: Condvar,
+}
+
+impl ArcWake for Parker {
+    fn wake_by_ref(this: &Arc<Self>) {
+        *this.notified.lock() = true;
+        this.ready.notify_one();
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn wait_listener(listener: impl Listener, timeout: Option<Duration>) {
+    match timeout {
+        Some(timeout) => {
+            listener.wait_timeout(timeout);
+        }
+        None => listener.wait(),
+    }
+}
+
+// event-listener exposes blocking waits only on native targets. Threaded WASI
+// can still use the same notification protocol through its Future interface.
+#[cfg(target_family = "wasm")]
+fn wait_listener(listener: impl Listener, timeout: Option<Duration>) {
+    wait_listener_portable(listener, timeout);
+}
+
+#[cfg(any(all(test, not(feature = "loom")), target_family = "wasm"))]
+fn wait_listener_portable(listener: impl Future<Output = ()>, timeout: Option<Duration>) -> bool {
+    let parker = Arc::new(Parker::default());
+    let waker = waker_ref(&parker);
+    let mut cx = Context::from_waker(&waker);
+    let mut listener = pin!(listener);
+    let deadline = timeout.and_then(|timeout| Instant::now().checked_add(timeout));
+    loop {
+        *parker.notified.lock() = false;
+        if listener.as_mut().poll(&mut cx).is_ready() {
+            return true;
+        }
+        let mut notified = parker.notified.lock();
+        while !*notified {
+            match deadline {
+                Some(deadline) => {
+                    let remaining = deadline.saturating_duration_since(Instant::now());
+                    if remaining.is_zero() {
+                        return false;
+                    }
+                    parker.ready.wait_for(&mut notified, remaining);
+                }
+                None => parker.ready.wait(&mut notified),
+            }
+        }
     }
 }
 
@@ -282,21 +521,14 @@ pub struct Metrics {
     pub polls: u64,
 }
 
-/// Spawn on the current goexec runtime. Panics outside a goexec worker.
+/// Spawn on the current goexec runtime. Panics without a worker or entered
+/// context.
 pub fn spawn<F>(future: F) -> JoinHandle<F::Output>
 where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
 {
-    let shared = CURRENT.with(|current| {
-        current
-            .borrow()
-            .as_ref()
-            .expect("goexec::spawn called outside a worker")
-            .shared
-            .clone()
-    });
-    shared.spawn(future)
+    Handle::current().spawn(future)
 }
 
 /// Cooperatively yield to other tasks, once.
@@ -316,10 +548,11 @@ pub async fn yield_now() {
 
 /// Execute an explicitly marked blocking operation on the current OS thread.
 ///
-/// Short operations only update thread-local/atomic state. The closure may
-/// borrow data and need not be `Send`. Nested calls are accounted for once.
-/// Outside goexec this simply calls the closure. CPU-intensive work should not
-/// be put in this boundary: compensating for it can oversubscribe CPUs.
+/// Short operations timestamp their start and update thread-local/atomic state.
+/// The closure may borrow data and need not be `Send`. Nested calls are
+/// accounted for once. Outside goexec this simply calls the closure.
+/// CPU-intensive work should not be put in this boundary: compensating for it
+/// can oversubscribe CPUs.
 pub fn blocking<F: FnOnce() -> R, R>(f: F) -> R {
     CURRENT.with(|current| {
         let current = current.borrow();
@@ -328,7 +561,15 @@ pub fn blocking<F: FnOnce() -> R, R>(f: F) -> R {
         };
         let depth = context.depth.get();
         context.depth.set(depth + 1);
-        let ticket = (depth == 0).then(|| context.worker.call.enter());
+        let ticket = (depth == 0).then(|| {
+            context.worker.blocking_started.store(
+                context.shared.clock_origin.elapsed().as_nanos() as u64,
+                Ordering::Relaxed,
+            );
+            // Release-publish the timestamp with this generation. A monitor
+            // racing a later generation cannot detach it using this ticket.
+            context.worker.call.enter()
+        });
         let _guard = BlockingGuard { context, ticket };
         f()
     })
@@ -364,13 +605,15 @@ fn assert_outside_worker(operation: &str) {
 #[derive(Clone, Copy)]
 pub(crate) struct TaskId {
     registry: usize,
-    index: u64,
+    index: usize,
 }
 
 #[derive(Default)]
 struct Registry {
-    tasks: HashMap<u64, AbortHandle>,
-    next_id: u64,
+    // Slots are private registration tokens, owned until TaskFuture is dropped.
+    // Cancellation handles own independent state, so an old handle cannot
+    // cancel a later task after its slot is reused.
+    tasks: Slab<AbortHandle>,
 }
 
 #[derive(Default)]
@@ -380,7 +623,7 @@ struct Scheduler {
     threads: Vec<thread::JoinHandle<()>>,
     live_workers: usize,
     monitor_alive: bool,
-    monitor_parked: bool,
+    monitor_thread: Option<thread::JoinHandle<()>>,
     sleeping_workers: usize,
     permits: usize,
     polling: usize,
@@ -393,9 +636,11 @@ struct Scheduler {
 }
 
 pub(crate) struct Shared {
+    clock_origin: Instant,
     parallelism: usize,
     max_threads: usize,
     handoff_delay: Duration,
+    hooks: ThreadHooks,
     state: Mutex<Scheduler>,
     ready: Injector<Runnable>,
     registry: Vec<Mutex<Registry>>,
@@ -403,9 +648,10 @@ pub(crate) struct Shared {
     closed: AtomicBool,
     returning: AtomicBool,
     wake_needed: AtomicBool,
+    monitor_parked: AtomicBool,
     changed: Condvar,
-    work_available: Condvar,
-    monitor_wake: Condvar,
+    work_available: Event,
+    monitor_wake: Event,
     #[cfg(test)]
     manual_monitor: bool,
     #[cfg(test)]
@@ -418,9 +664,7 @@ impl Shared {
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        let (sender, receiver) = oneshot::channel();
         let (abort, registration) = AbortHandle::new_pair();
-        let join = JoinHandle::new(receiver, abort.clone());
         let registry = CURRENT
             .with(|current| {
                 current
@@ -437,25 +681,36 @@ impl Shared {
             // closed before checking shards, so registration cannot be missed.
             if self.closed.load(Ordering::Acquire) {
                 drop(shard);
-                let _ = sender.send(Err(JoinError::cancelled()));
-                return join;
+                return JoinHandle::cancelled(abort);
             }
-            let index = shard.next_id;
-            shard.next_id = index.checked_add(1).expect("task ID space exhausted");
-            shard.tasks.insert(index, abort);
+            let index = shard.tasks.insert(abort.clone());
             TaskId { registry, index }
         };
-        let task = TaskFuture::new(
-            Abortable::new(future, registration),
-            sender,
-            self.clone(),
-            id,
-        );
+        let future = Abortable::new(future, registration);
+        // Keep large futures out of the task header/result allocation. Small
+        // futures share that allocation and avoid an extra allocation/free.
+        if std::mem::size_of::<F>() > 64 {
+            self.spawn_registered(Box::pin(future), id, abort)
+        } else {
+            self.spawn_registered(future, id, abort)
+        }
+    }
+
+    fn spawn_registered<F, T>(
+        self: &Arc<Self>,
+        future: F,
+        id: TaskId,
+        abort: AbortHandle,
+    ) -> JoinHandle<T>
+    where
+        F: Future<Output = Result<T, futures::future::Aborted>> + Send + 'static,
+        T: Send + 'static,
+    {
+        let task = TaskFuture::new(future, self.clone(), id);
         let scheduler = self.clone();
         let (runnable, task) = async_task::spawn(task, move |runnable| scheduler.enqueue(runnable));
-        task.detach();
         runnable.schedule();
-        join
+        JoinHandle::new(task, abort)
     }
 
     fn enqueue(&self, runnable: Runnable) {
@@ -477,26 +732,17 @@ impl Shared {
         if self.wake_needed.load(Ordering::Acquire)
             && self.wake_needed.swap(false, Ordering::AcqRel)
         {
-            let mut state = self.state.lock();
-            self.wake_monitor(&mut state);
-            // Consume this wake request without rearming it in the publisher.
-            // The awakened worker rearms before running when capacity remains,
-            // so a burst need not take the scheduler lock for every enqueue.
-            if state.permits < self.parallelism {
-                if let Some(&id) = state.returning.front() {
-                    state.workers[id].worker.returned.notify_one();
-                } else if state.sleeping_workers != 0 {
-                    // Publication may race a batch transfer between queues.
-                    // Wake a worker even if a queue search would miss the work.
-                    self.work_available.notify_one();
-                }
-            }
+            // Registered listeners retain notifications before their thread
+            // actually parks. Publishers therefore need no scheduler lock.
+            // The worker still acquires a permit before polling any task.
+            self.work_available.notify(1);
+            self.wake_monitor();
         }
     }
 
     pub(crate) fn task_finished(&self, id: TaskId) {
         // AbortHandle's waker can own a task whose destructor reenters us.
-        let removed = self.registry[id.registry].lock().tasks.remove(&id.index);
+        let removed = self.registry[id.registry].lock().tasks.remove(id.index);
         drop(removed);
         if self.closed.load(Ordering::Acquire) {
             let state = self.state.lock();
@@ -531,13 +777,19 @@ impl Shared {
         let tasks: Vec<_> = self
             .registry
             .iter()
-            .flat_map(|r| r.lock().tasks.values().cloned().collect::<Vec<_>>())
+            .flat_map(|r| {
+                r.lock()
+                    .tasks
+                    .iter()
+                    .map(|(_, task)| task.clone())
+                    .collect::<Vec<_>>()
+            })
             .collect();
         for task in tasks {
             task.abort();
         }
-        self.work_available.notify_all();
-        self.monitor_wake.notify_one();
+        self.work_available.notify(usize::MAX);
+        self.monitor_wake.notify(1);
         self.changed.notify_all();
     }
 
@@ -551,15 +803,16 @@ impl Shared {
             if let Some(&id) = state.returning.front() {
                 state.workers[id].worker.returned.notify_one();
             } else if self.has_ready(state) && state.sleeping_workers != 0 {
-                self.work_available.notify_one();
+                self.work_available.notify(1);
             }
         }
     }
 
-    fn wake_monitor(&self, state: &mut Scheduler) {
-        if state.monitor_parked {
-            state.monitor_parked = false;
-            self.monitor_wake.notify_one();
+    fn wake_monitor(&self) {
+        if self.monitor_parked.load(Ordering::Acquire)
+            && self.monitor_parked.swap(false, Ordering::AcqRel)
+        {
+            self.monitor_wake.notify(1);
         }
     }
 
@@ -568,9 +821,9 @@ impl Shared {
         self.changed.notify_all();
         if state.closed {
             self.changed.notify_all();
-            self.monitor_wake.notify_one();
+            self.monitor_wake.notify(1);
             if self.finished(state) {
-                self.work_available.notify_all();
+                self.work_available.notify(usize::MAX);
             }
         }
     }
@@ -614,6 +867,7 @@ impl Shared {
         let worker = Arc::new(Worker {
             id: state.workers.len(),
             call: CallState::new(),
+            blocking_started: AtomicU64::new(0),
             returned: Condvar::new(),
             stealer: local.stealer(),
             polls: AtomicU64::new(0),
@@ -676,42 +930,58 @@ impl Shared {
                 local,
             });
         });
+        self.run_hook(&self.hooks.start);
         CURRENT.with(|current| {
             self.run_worker(&worker, &current.borrow().as_ref().unwrap().local);
         });
         CURRENT.with(|current| {
             current.borrow_mut().take();
         });
+        self.run_hook(&self.hooks.stop);
+    }
+
+    fn run_hook(&self, hook: &Option<Arc<dyn Fn() + Send + Sync>>) {
+        if let Some(hook) = hook {
+            if catch_unwind(AssertUnwindSafe(|| hook())).is_err() {
+                self.close();
+            }
+        }
     }
 
     fn run_worker(&self, worker: &Worker, local: &LocalQueue<Runnable>) {
+        // This worker is the only writer; metrics readers only load snapshots.
+        let mut total_polls = 0_u64;
+        let mut stealers = Vec::new();
         let mut state = self.state.lock();
         loop {
             if self.finished(&state) {
                 return;
             }
             if state.permits < self.parallelism && state.returning.is_empty() {
-                let stealers: Vec<_> = (1..state.workers.len())
-                    .map(|offset| {
-                        state.workers[(worker.id + offset) % state.workers.len()]
-                            .worker
-                            .stealer
-                            .clone()
-                    })
-                    .collect();
+                if stealers.len() + 1 != state.workers.len() {
+                    stealers = (1..state.workers.len())
+                        .map(|offset| {
+                            state.workers[(worker.id + offset) % state.workers.len()]
+                                .worker
+                                .stealer
+                                .clone()
+                        })
+                        .collect();
+                }
                 if let Some((mut runnable, _)) =
                     self.next_runnable(worker, local, &stealers, true, true)
                 {
                     state.permits += 1;
                     state.polling += 1;
                     state.workers[worker.id].busy = true;
-                    self.wake_monitor(&mut state);
+                    self.wake_monitor();
                     self.wake_available(&state);
                     drop(state);
                     let mut polls = 0;
                     loop {
                         let _ = catch_unwind(AssertUnwindSafe(|| runnable.run()));
-                        worker.polls.fetch_add(1, Ordering::Relaxed);
+                        total_polls = total_polls.wrapping_add(1);
+                        worker.polls.store(total_polls, Ordering::Relaxed);
                         polls += 1;
                         // A permit belongs to this worker across a bounded run
                         // of polls. Returning callers take it at the next poll
@@ -751,9 +1021,20 @@ impl Shared {
                     continue;
                 }
             }
+            if self.hooks.park.is_some() {
+                drop(state);
+                self.run_hook(&self.hooks.park);
+                state = self.state.lock();
+                if self.finished(&state) {
+                    return;
+                }
+            }
+            // Register before the final queue check. An enqueue between this
+            // check and wait is retained even after dropping the scheduler lock.
+            event_listener::listener!(self.work_available => listener);
             self.wake_available(&state);
             state.sleeping_workers += 1;
-            if state.permits < self.parallelism || state.monitor_parked {
+            if state.permits < self.parallelism || self.monitor_parked.load(Ordering::Acquire) {
                 self.wake_needed.store(true, Ordering::Release);
                 fence(Ordering::SeqCst);
             }
@@ -769,7 +1050,9 @@ impl Shared {
                 state = self.state.lock();
                 continue;
             }
-            self.work_available.wait(&mut state);
+            drop(state);
+            wait_listener(listener, None);
+            state = self.state.lock();
             state.sleeping_workers -= 1;
         }
     }
@@ -778,7 +1061,7 @@ impl Shared {
         let mut state = self.state.lock();
         state.returning.push_back(worker.id);
         self.returning.store(true, Ordering::SeqCst);
-        self.wake_monitor(&mut state);
+        self.wake_monitor();
         self.notify_shutdown(&state);
         while state.permits == self.parallelism || state.returning.front() != Some(&worker.id) {
             worker.returned.wait(&mut state);
@@ -796,6 +1079,7 @@ impl Shared {
         let mut observations = Vec::new();
         let mut state = self.state.lock();
         loop {
+            event_listener::listener!(self.monitor_wake => listener);
             if self.finished(&state) {
                 let threads = std::mem::take(&mut state.threads);
                 drop(state);
@@ -812,26 +1096,28 @@ impl Shared {
             }
             #[cfg(test)]
             if self.manual_monitor {
-                self.monitor_wake.wait(&mut state);
+                drop(state);
+                wait_listener(listener, None);
+                state = self.state.lock();
                 continue;
             }
             if !self.has_ready(&state) && state.returning.is_empty() {
                 observations.clear();
-                state.monitor_parked = true;
+                self.monitor_parked.store(true, Ordering::Release);
                 self.wake_needed.store(true, Ordering::Release);
                 fence(Ordering::SeqCst);
                 if !self.has_ready(&state) {
-                    self.monitor_wake.wait(&mut state);
+                    drop(state);
+                    wait_listener(listener, None);
+                    state = self.state.lock();
                 }
-                state.monitor_parked = false;
+                self.monitor_parked.store(false, Ordering::Release);
                 continue;
             }
             self.scan(&mut state, &mut observations, Instant::now());
-            self.monitor_wake.wait_while_for(
-                &mut state,
-                |state| !self.finished(state),
-                self.handoff_delay,
-            );
+            drop(state);
+            wait_listener(listener, Some(self.handoff_delay));
+            state = self.state.lock();
         }
     }
 
@@ -851,17 +1137,33 @@ impl Shared {
             let since = match *observation {
                 Some((previous, since)) if previous == ticket => since,
                 _ => {
-                    *observation = Some((ticket, now));
-                    continue;
+                    let since = self.clock_origin
+                        + Duration::from_nanos(worker.blocking_started.load(Ordering::Relaxed));
+                    *observation = Some((ticket, since));
+                    since
                 }
             };
-            if now.saturating_duration_since(since) < self.handoff_delay
-                || state.permits < self.parallelism
-                || (!self.has_ready(state) && state.returning.is_empty())
-            {
+            if now.saturating_duration_since(since) < self.handoff_delay {
                 continue;
             }
-            if state.returning.is_empty() && state.workers.iter().all(|entry| entry.busy) {
+            let available = self.parallelism - state.permits;
+            let demand = self.ready.len()
+                + state
+                    .workers
+                    .iter()
+                    .map(|entry| entry.worker.stealer.len())
+                    .sum::<usize>()
+                + state.returning.len();
+            // A single scan can reclaim several blocked permits. Stop once
+            // existing free permits cover the ready work and returning callers.
+            if demand <= available {
+                continue;
+            }
+            let replacements =
+                state.workers.iter().filter(|entry| !entry.busy).count() + state.returning.len();
+            // Reserve enough actual workers for every permit released by this
+            // scan, even though none can acquire the scheduler lock yet.
+            if replacements <= available {
                 if state.live_workers == self.max_threads {
                     state.capacity_delays += 1;
                     continue;

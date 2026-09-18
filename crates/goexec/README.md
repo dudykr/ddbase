@@ -48,6 +48,24 @@ task. `Runtime::block_on` submits its root future to a worker, so both the root
 future and its output must be `Send + 'static`; nested `block_on` on any goexec
 worker panics. Spawned futures and their outputs have the same bounds.
 
+`Handle::enter()` establishes a spawning context on an external thread; guards
+are thread-bound and must be dropped in reverse order. `Handle::try_current()`
+returns that context or the worker's runtime. `Handle::parallelism()` reports the
+configured execution permits, not the number of OS threads.
+
+`Handle::block_on()` drives a borrowed (possibly non-`Send`) future on its caller.
+It supports nested calls on workers, marking only the wait between polls as
+blocking and reacquiring the permit before polling again. Calling it from inside
+an explicit `blocking` boundary panics because that boundary may have already
+surrendered the worker's permit. Unlike `Runtime::block_on`, external callers poll
+on their own thread, outside the worker parallelism limit.
+
+Builder `on_thread_start`, `on_thread_park`, and `on_thread_stop` hooks run on
+workers outside scheduler locks. Start/park hooks have a worker context; stop
+hooks run after it is cleared. A panicking hook closes admission and requests
+cancellation. The park hook is followed by another queue check and does not
+necessarily result in a sleep. It does not observe user-marked blocking calls.
+
 `blocking(|| operation())` is synchronous. It can borrow local buffers and
 non-`Send` values, without moving the closure to another thread or requiring
 `'static`. Only the outermost nested boundary is tracked. Outside goexec it
@@ -81,32 +99,46 @@ must actually be blocking; putting CPU work there can oversubscribe the machine.
 A worker retains its permit for at most 64 polls before a scheduler checkpoint,
 and checks the injection queue at least every 16 polls. Returning callers and
 shutdown force an earlier checkpoint at the next poll boundary. Task registration
-and removal use sharded `parking_lot`-protected registries. Normal local queue
+and removal use sharded `parking_lot`-protected slabs, with at least 16 shards
+so external submissions and completions do not share one lock at parallelism 1. Slots are reused only
+after their owning task future is destroyed; cancellation handles retain
+independent state rather than slot indices. Normal local queue
 operations do not acquire the scheduler mutex or update a shared task counter.
-Workers rebuild their rotated work-stealing peer lists at scheduler checkpoints
-and increment poll metrics atomically. Tasks wrap their pinned user futures in
-`Abortable`, which checks cancellation and registers pending-task wakeups.
-The peer-list and cancellation-waker caches were reverted after the native
-Rspack comparison showed a build-time regression. The worker wakeup fix and
-cancellation, shutdown, fairness and worker-growth regression tests remain.
+Workers retain their rotated work-stealing peer lists until the worker set grows
+and publish poll metrics with single-writer atomic stores. The first search and permit acquisition
+share the scheduler lock; searches during the bounded poll loop run without it.
+Tasks pin user futures of up to 64 bytes directly inside async-task storage,
+avoiding a second heap allocation. Larger futures retain a separate pinned box
+to bound the task header/result allocation. `pin-project-lite` provides the projection and pinned drop;
+clearing the pinned future catches destructor panics without moving the future.
+`Abortable` checks cancellation and registers pending-task wakeups.
+Task results use async-task's join storage directly, without a separate oneshot
+allocation. Dropping a join handle still detaches the task. A result wrapper
+isolates destructor panics for detached or completed-but-unjoined outputs.
+Cancellation, shutdown, fairness and worker-growth regression tests cover these
+scheduler boundaries.
 
 Ready workers, returning callers, the monitor, and shutdown observers have
-separate wake paths. Enqueue wakes a worker only when an execution permit is
-available; returning callers wake in FIFO order on per-worker condition
-variables. Queue publication and the final search before parking use paired
+separate wake paths. Enqueue notifies registered event listeners without taking
+the scheduler mutex; a worker still needs a permit before it polls user code.
+Returning callers wake in FIFO order on per-worker condition variables.
+Queue publication and the final search before parking use paired
 memory fences so either the waiter sees work or its publisher sees the wake
 request. Ordinary task completion does not broadcast to idle threads; shutdown
 still wakes every parked worker.
 Wake requests are rearmed while execution capacity remains available, so
 successive enqueues can wake workers that were already parked.
 
-The common blocking-call path is TLS bookkeeping and atomic syscall-generation transitions:
-it does not allocate a task, enqueue work, wake another thread, or read a clock
-per call. A monitor samples at the configured delay. After observing the same
-generation for at least that delay, it can reclaim the permit if work is waiting
-and a replacement thread is available. A first observation starts the interval;
-100 microseconds is not an upper bound on handoff latency. OS timer resolution
-and scheduling affect it. The monitor parks when no queued work or returning
+The common blocking-call path timestamps the outermost call, updates TLS
+bookkeeping, and publishes an atomic syscall generation. It does not allocate
+a task, enqueue work, or wake another thread per call. A monitor samples at the
+configured delay. Once the call has lasted at least that delay, it can reclaim
+the permit if work is waiting and a replacement thread is available. One scan
+can replace multiple blocked workers, reserving enough threads for each released
+permit and stopping when free permits cover the waiting work. The interval starts
+at call entry rather than the monitor's first observation. 100 microseconds is
+not an upper bound on handoff latency; OS timer resolution and scheduling affect
+it. The monitor parks when no queued work or returning
 caller needs attention. Fast batch steals notify after publishing into their
 destination deque, so a waiter that missed both queues during transfer is
 woken. Ordinary task wakes do not interrupt an active observation interval to
@@ -136,11 +168,16 @@ Using a Tokio API which needs its runtime context on these workers is unsupporte
 
 ## Cancellation and shutdown
 
-`JoinHandle::abort()` requests cancellation at a poll boundary. An in-progress
+`JoinHandle::abort_handle()` returns a cloneable cancellation handle that can
+outlive the join handle. `JoinHandle::abort()` requests cancellation at a poll boundary. An in-progress
 syscall, CPU loop, or destructor is not forcibly interrupted. Completion can
 win a race with cancellation. A task's poll/destructor panic becomes a panic
 `JoinError`; a root panic is resumed on the `block_on` caller. As with other Rust
 runtimes, `panic = "abort"` and a double panic during unwinding cannot be isolated.
+
+`Runtime::shutdown()` cancels tasks and joins every worker and the monitor,
+including TLS destructors. It can wait indefinitely for user code to return and
+must not be called from a worker.
 
 Dropping `Runtime` closes admission, requests cancellation for all tasks and
 returns without joining workers. Pending tasks are woken to run cancellation.
@@ -273,3 +310,15 @@ cargo bench -p goexec --locked --bench compare -- \
 Go's scheduling API and syscall behavior are described in the
 [runtime documentation](https://pkg.go.dev/runtime) and
 [Go 1.25.1 scheduler source](https://github.com/golang/go/blob/go1.25.1/src/runtime/proc.go).
+
+### Task lifecycle benchmark
+
+`cargo bench -p goexec --locked --bench tasks -- spawn 16 500` measures batches
+of 20,000 externally submitted tasks. The remaining arguments are parallelism
+and minimum measured milliseconds. `yield` and `empty` run 1,000 tasks with 100
+yields each (the latter adds an empty blocking boundary); `blocking` runs 128
+one-millisecond blocking calls. Each process warms one batch, then measures at
+least three batches and the requested duration. Results use the system
+allocator and exclude runtime construction and shutdown. CSV retains iteration
+counts, throughput, cumulative workers and measured handoffs. Compare saved
+binaries in alternating order, and profile in separate runs.

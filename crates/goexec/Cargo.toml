@@ -15,8 +15,11 @@ loom = []
 [dependencies]
 async-task = { workspace = true }
 crossbeam-deque = { workspace = true }
+event-listener = { workspace = true }
 futures = { workspace = true }
 parking_lot = { workspace = true }
+pin-project-lite = { workspace = true }
+slab = { workspace = true }
 
 [dev-dependencies]
 loom = { workspace = true }
@@ -24,4 +27,8 @@ tokio = { workspace = true, features = ["rt-multi-thread"] }
 
 [[bench]]
 name = "compare"
+harness = false
+
+[[bench]]
+name = "tasks"
 harness = false

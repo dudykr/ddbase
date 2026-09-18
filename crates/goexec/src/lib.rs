@@ -31,5 +31,7 @@ mod runtime;
 mod state;
 mod task;
 
-pub use runtime::{blocking, spawn, yield_now, Builder, Handle, Metrics, Runtime};
+/// An independently owned task cancellation handle.
+pub use futures::future::AbortHandle;
+pub use runtime::{blocking, spawn, yield_now, Builder, EnterGuard, Handle, Metrics, Runtime};
 pub use task::{JoinError, JoinHandle};
