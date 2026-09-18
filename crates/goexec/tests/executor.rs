@@ -387,3 +387,87 @@ fn invalid_configuration_is_rejected() {
         .build()
         .is_err());
 }
+
+#[test]
+fn detached_and_unjoined_output_panics_do_not_escape() {
+    struct Output(mpsc::Sender<()>);
+    impl Drop for Output {
+        fn drop(&mut self) {
+            self.0.send(()).unwrap();
+            panic!("unobserved output destructor");
+        }
+    }
+    for detach_before_completion in [true, false] {
+        let rt = Runtime::builder().parallelism(1).build().unwrap();
+        let (release, wait) = futures::channel::oneshot::channel();
+        let (dropped, destroyed) = mpsc::channel();
+        let task = rt.spawn(async move {
+            wait.await.unwrap();
+            Output(dropped)
+        });
+        if detach_before_completion {
+            drop(task);
+            release.send(()).unwrap();
+        } else {
+            release.send(()).unwrap();
+            // The single permit and FIFO queue put this sentinel after the
+            // completed task. Dropping the join handle now destroys its result
+            // on this caller instead of on the worker.
+            rt.block_on(async {});
+            assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(task))).is_ok());
+        }
+        destroyed.recv_timeout(TIMEOUT).unwrap();
+        assert_eq!(rt.block_on(async { 42 }), 42);
+        assert!(rt.shutdown_timeout(TIMEOUT));
+        assert!(destroyed.try_recv().is_err());
+    }
+}
+
+#[test]
+fn completed_abort_handles_do_not_cancel_reused_registrations() {
+    let rt = Runtime::builder().parallelism(1).build().unwrap();
+    let mut completed = Vec::new();
+    for n in 0..128 {
+        let task = rt.spawn(async move { n });
+        completed.push(task.abort_handle());
+        assert_eq!(futures::executor::block_on(task).unwrap(), n);
+    }
+    let (release, wait) = futures::channel::oneshot::channel();
+    let pending = rt.spawn(async move { wait.await.unwrap() });
+    // Ensure the new task has installed its cancellation waker before old
+    // cancellation handles are invoked, exercising both token and waker reuse.
+    rt.block_on(async {});
+    for abort in completed {
+        abort.abort();
+    }
+    release.send(42).unwrap();
+    assert_eq!(futures::executor::block_on(pending).unwrap(), 42);
+    assert!(rt.shutdown_timeout(TIMEOUT));
+}
+
+#[test]
+fn join_transfers_a_pinned_output_and_drops_it_once() {
+    struct Output {
+        drops: Arc<AtomicUsize>,
+        _pinned: std::marker::PhantomPinned,
+    }
+    impl Drop for Output {
+        fn drop(&mut self) {
+            self.drops.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let rt = Runtime::builder().parallelism(2).build().unwrap();
+    let drops = Arc::new(AtomicUsize::new(0));
+    let count = drops.clone();
+    let value = futures::executor::block_on(rt.spawn(async move {
+        Output {
+            drops: count,
+            _pinned: std::marker::PhantomPinned,
+        }
+    }))
+    .unwrap();
+    assert!(rt.shutdown_timeout(TIMEOUT));
+    assert_eq!(drops.load(Ordering::SeqCst), 0);
+    drop(value);
+    assert_eq!(drops.load(Ordering::SeqCst), 1);
+}

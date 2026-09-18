@@ -1,6 +1,6 @@
 use std::{
     cell::{Cell, RefCell},
-    collections::{HashMap, VecDeque},
+    collections::VecDeque,
     fmt,
     future::Future,
     io,
@@ -21,15 +21,15 @@ use async_task::Runnable;
 use crossbeam_deque::{Injector, Steal, Stealer, Worker as LocalQueue};
 use event_listener::{Event, Listener};
 use futures::{
-    channel::oneshot,
     future::{poll_fn, AbortHandle, Abortable},
     task::{waker_ref, ArcWake},
 };
 use parking_lot::{Condvar, Mutex};
+use slab::Slab;
 
 use crate::{
     state::CallState,
-    task::{JoinError, JoinHandle, TaskFuture},
+    task::{JoinHandle, TaskFuture},
 };
 
 thread_local! {
@@ -603,13 +603,15 @@ fn assert_outside_worker(operation: &str) {
 #[derive(Clone, Copy)]
 pub(crate) struct TaskId {
     registry: usize,
-    index: u64,
+    index: usize,
 }
 
 #[derive(Default)]
 struct Registry {
-    tasks: HashMap<u64, AbortHandle>,
-    next_id: u64,
+    // Slots are private registration tokens, owned until TaskFuture is dropped.
+    // Cancellation handles own independent state, so an old handle cannot
+    // cancel a later task after its slot is reused.
+    tasks: Slab<AbortHandle>,
 }
 
 #[derive(Default)]
@@ -660,9 +662,7 @@ impl Shared {
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        let (sender, receiver) = oneshot::channel();
         let (abort, registration) = AbortHandle::new_pair();
-        let join = JoinHandle::new(receiver, abort.clone());
         let registry = CURRENT
             .with(|current| {
                 current
@@ -679,25 +679,16 @@ impl Shared {
             // closed before checking shards, so registration cannot be missed.
             if self.closed.load(Ordering::Acquire) {
                 drop(shard);
-                let _ = sender.send(Err(JoinError::cancelled()));
-                return join;
+                return JoinHandle::cancelled(abort);
             }
-            let index = shard.next_id;
-            shard.next_id = index.checked_add(1).expect("task ID space exhausted");
-            shard.tasks.insert(index, abort);
+            let index = shard.tasks.insert(abort.clone());
             TaskId { registry, index }
         };
-        let task = TaskFuture::new(
-            Abortable::new(future, registration),
-            sender,
-            self.clone(),
-            id,
-        );
+        let task = TaskFuture::new(Abortable::new(future, registration), self.clone(), id);
         let scheduler = self.clone();
         let (runnable, task) = async_task::spawn(task, move |runnable| scheduler.enqueue(runnable));
-        task.detach();
         runnable.schedule();
-        join
+        JoinHandle::new(task, abort)
     }
 
     fn enqueue(&self, runnable: Runnable) {
@@ -729,7 +720,7 @@ impl Shared {
 
     pub(crate) fn task_finished(&self, id: TaskId) {
         // AbortHandle's waker can own a task whose destructor reenters us.
-        let removed = self.registry[id.registry].lock().tasks.remove(&id.index);
+        let removed = self.registry[id.registry].lock().tasks.remove(id.index);
         drop(removed);
         if self.closed.load(Ordering::Acquire) {
             let state = self.state.lock();
@@ -764,7 +755,13 @@ impl Shared {
         let tasks: Vec<_> = self
             .registry
             .iter()
-            .flat_map(|r| r.lock().tasks.values().cloned().collect::<Vec<_>>())
+            .flat_map(|r| {
+                r.lock()
+                    .tasks
+                    .iter()
+                    .map(|(_, task)| task.clone())
+                    .collect::<Vec<_>>()
+            })
             .collect();
         for task in tasks {
             task.abort();

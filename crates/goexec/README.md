@@ -99,13 +99,18 @@ must actually be blocking; putting CPU work there can oversubscribe the machine.
 A worker retains its permit for at most 64 polls before a scheduler checkpoint,
 and checks the injection queue at least every 16 polls. Returning callers and
 shutdown force an earlier checkpoint at the next poll boundary. Task registration
-and removal use sharded `parking_lot`-protected registries. Normal local queue
+and removal use sharded `parking_lot`-protected slabs. Slots are reused only
+after their owning task future is destroyed; cancellation handles retain
+independent state rather than slot indices. Normal local queue
 operations do not acquire the scheduler mutex or update a shared task counter.
 Workers retain their rotated work-stealing peer lists until the worker set grows
 and increment poll metrics atomically. The first search and permit acquisition
 share the scheduler lock; searches during the bounded poll loop run without it.
 Tasks wrap their pinned user futures in
 `Abortable`, which checks cancellation and registers pending-task wakeups.
+Task results use async-task's join storage directly, without a separate oneshot
+allocation. Dropping a join handle still detaches the task. A result wrapper
+isolates destructor panics for detached or completed-but-unjoined outputs.
 Cancellation, shutdown, fairness and worker-growth regression tests cover these
 scheduler boundaries.
 
@@ -301,3 +306,15 @@ cargo bench -p goexec --locked --bench compare -- \
 Go's scheduling API and syscall behavior are described in the
 [runtime documentation](https://pkg.go.dev/runtime) and
 [Go 1.25.1 scheduler source](https://github.com/golang/go/blob/go1.25.1/src/runtime/proc.go).
+
+### Task lifecycle benchmark
+
+`cargo bench -p goexec --locked --bench tasks -- spawn 16 500` measures batches
+of 20,000 externally submitted tasks. The remaining arguments are parallelism
+and minimum measured milliseconds. `yield` and `empty` run 1,000 tasks with 100
+yields each (the latter adds an empty blocking boundary); `blocking` runs 128
+one-millisecond blocking calls. Each process warms one batch, then measures at
+least three batches and the requested duration. Results use the system
+allocator and exclude runtime construction and shutdown. CSV retains iteration
+counts, throughput, cumulative workers and measured handoffs. Compare saved
+binaries in alternating order, and profile in separate runs.

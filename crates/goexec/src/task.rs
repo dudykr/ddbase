@@ -8,10 +8,8 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures::{
-    channel::oneshot,
-    future::{AbortHandle, Abortable},
-};
+use async_task::{FallibleTask, Task};
+use futures::future::{AbortHandle, Abortable};
 
 use crate::runtime::{Shared, TaskId};
 
@@ -69,16 +67,20 @@ impl std::error::Error for JoinError {}
 /// it. Awaiting the handle does not require a goexec runtime.
 #[must_use = "await the handle to observe the task's result"]
 pub struct JoinHandle<T> {
-    receiver: oneshot::Receiver<Result<T, JoinError>>,
+    task: Option<FallibleTask<TaskOutput<T>>>,
     abort: AbortHandle,
 }
 
 impl<T> JoinHandle<T> {
-    pub(crate) fn new(
-        receiver: oneshot::Receiver<Result<T, JoinError>>,
-        abort: AbortHandle,
-    ) -> Self {
-        Self { receiver, abort }
+    pub(crate) fn new(task: Task<TaskOutput<T>>, abort: AbortHandle) -> Self {
+        Self {
+            task: Some(task.fallible()),
+            abort,
+        }
+    }
+
+    pub(crate) fn cancelled(abort: AbortHandle) -> Self {
+        Self { task: None, abort }
     }
 
     /// Obtain an independently owned cancellation handle. Dropping it does not
@@ -98,9 +100,35 @@ impl<T> Future for JoinHandle<T> {
     type Output = Result<T, JoinError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.receiver)
-            .poll(cx)
-            .map(|result| result.unwrap_or_else(|_| Err(JoinError::cancelled())))
+        let Some(task) = self.task.as_mut() else {
+            return Poll::Ready(Err(JoinError::cancelled()));
+        };
+        Pin::new(task).poll(cx).map(|output| {
+            output.map_or_else(
+                || Err(JoinError::cancelled()),
+                |mut output| output.0.take().expect("missing task output"),
+            )
+        })
+    }
+}
+
+impl<T> Drop for JoinHandle<T> {
+    fn drop(&mut self) {
+        if let Some(task) = self.task.take() {
+            task.detach();
+        }
+    }
+}
+
+// async-task must never see a panic from an unobserved user result's
+// destructor. The joiner takes the value out; detached/completed-but-unjoined
+// values are destroyed here, whether on a worker or on the thread dropping the
+// handle.
+pub(crate) struct TaskOutput<T>(Option<Result<T, JoinError>>);
+
+impl<T> Drop for TaskOutput<T> {
+    fn drop(&mut self) {
+        let _ = catch_unwind(AssertUnwindSafe(|| drop(self.0.take())));
     }
 }
 
@@ -115,47 +143,36 @@ impl<T> fmt::Debug for JoinHandle<T> {
 // escape into async-task's abort-on-destructor-panic boundary.
 pub(crate) struct TaskFuture<F: Future> {
     future: Option<Pin<Box<Abortable<F>>>>,
-    sender: Option<oneshot::Sender<Result<F::Output, JoinError>>>,
     shared: Arc<Shared>,
     id: TaskId,
 }
 
 impl<F: Future> TaskFuture<F> {
-    pub(crate) fn new(
-        future: Abortable<F>,
-        sender: oneshot::Sender<Result<F::Output, JoinError>>,
-        shared: Arc<Shared>,
-        id: TaskId,
-    ) -> Self {
+    pub(crate) fn new(future: Abortable<F>, shared: Arc<Shared>, id: TaskId) -> Self {
         Self {
             future: Some(Box::pin(future)),
-            sender: Some(sender),
             shared,
             id,
         }
     }
 
-    fn finish(&mut self, mut result: Result<F::Output, JoinError>) {
+    fn finish(&mut self, mut result: Result<F::Output, JoinError>) -> TaskOutput<F::Output> {
         if let Err(panic) = catch_unwind(AssertUnwindSafe(|| drop(self.future.take()))) {
             let previous = std::mem::replace(&mut result, Err(JoinError::panicked(panic)));
             // Both a completed output and its future can have panicking
             // destructors. Keep either unwind out of async-task's drop glue.
             let _ = catch_unwind(AssertUnwindSafe(|| drop(previous)));
         }
-        if let Some(sender) = self.sender.take() {
-            // A detached result may have a user-defined destructor. Keep its
-            // panic out of async-task's own destructor.
-            let _ = catch_unwind(AssertUnwindSafe(|| drop(sender.send(result))));
-        }
+        TaskOutput(Some(result))
     }
 }
 
 impl<F: Future> Unpin for TaskFuture<F> {}
 
 impl<F: Future> Future for TaskFuture<F> {
-    type Output = ();
+    type Output = TaskOutput<F::Output>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let result = catch_unwind(AssertUnwindSafe(|| {
             self.future
                 .as_mut()
@@ -169,15 +186,14 @@ impl<F: Future> Future for TaskFuture<F> {
             Ok(Poll::Ready(Err(_))) => Err(JoinError::cancelled()),
             Err(panic) => Err(JoinError::panicked(panic)),
         };
-        self.finish(result);
-        Poll::Ready(())
+        Poll::Ready(self.finish(result))
     }
 }
 
 impl<F: Future> Drop for TaskFuture<F> {
     fn drop(&mut self) {
         if self.future.is_some() {
-            self.finish(Err(JoinError::cancelled()));
+            drop(self.finish(Err(JoinError::cancelled())));
         }
         self.shared.task_finished(self.id);
     }

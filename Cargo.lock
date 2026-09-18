@@ -437,6 +437,7 @@ dependencies = [
  "futures",
  "loom",
  "parking_lot",
+ "slab",
  "tokio",
 ]
 
