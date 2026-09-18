@@ -645,7 +645,13 @@ fn spawn_failure_retains_permit_and_can_recover() {
         done.send(()).unwrap();
     });
     rt.shared.fail_spawn.store(true, Ordering::Relaxed);
-    scan(&rt);
+    // Inject one mature observation. The two-scan helper may attempt twice if
+    // the call was already old enough before its first scan.
+    rt.shared.scan(
+        &mut rt.shared.state.lock(),
+        &mut Vec::new(),
+        Instant::now() + rt.shared.handoff_delay,
+    );
     assert_eq!(rt.metrics().handoffs, 1);
     assert_eq!(rt.metrics().thread_spawn_failures, 1);
     assert!(completion.try_recv().is_err());

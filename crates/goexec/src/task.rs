@@ -9,7 +9,8 @@ use std::{
 };
 
 use async_task::{FallibleTask, Task};
-use futures::future::{AbortHandle, Abortable};
+use futures::future::{AbortHandle, Aborted};
+use pin_project_lite::pin_project;
 
 use crate::runtime::{Shared, TaskId};
 
@@ -138,26 +139,41 @@ impl<T> fmt::Debug for JoinHandle<T> {
     }
 }
 
-// Keeping the user future in a pinned box lets us catch both poll and
-// destructor panics without unsafe projection or allowing a destructor to
-// escape into async-task's abort-on-destructor-panic boundary.
-pub(crate) struct TaskFuture<F: Future> {
-    future: Option<Pin<Box<Abortable<F>>>>,
-    shared: Arc<Shared>,
-    id: TaskId,
+// async-task already pins its allocation. Project the user future in place
+// rather than allocating a second box. Clearing the pinned Option runs its
+// destructor before replacing it, including when that destructor unwinds.
+pin_project! {
+    #[project_ref = TaskFutureRef]
+    pub(crate) struct TaskFuture<F: Future> {
+        #[pin]
+        future: Option<F>,
+        shared: Arc<Shared>,
+        id: TaskId,
+    }
+
+    impl<F: Future> PinnedDrop for TaskFuture<F> {
+        fn drop(mut this: Pin<&mut Self>) {
+            if this.as_ref().project_ref().future.is_some() {
+                drop(this.as_mut().finish::<()>(Err(JoinError::cancelled())));
+            }
+            let this = this.project();
+            this.shared.task_finished(*this.id);
+        }
+    }
 }
 
 impl<F: Future> TaskFuture<F> {
-    pub(crate) fn new(future: Abortable<F>, shared: Arc<Shared>, id: TaskId) -> Self {
+    pub(crate) fn new(future: F, shared: Arc<Shared>, id: TaskId) -> Self {
         Self {
-            future: Some(Box::pin(future)),
+            future: Some(future),
             shared,
             id,
         }
     }
 
-    fn finish(&mut self, mut result: Result<F::Output, JoinError>) -> TaskOutput<F::Output> {
-        if let Err(panic) = catch_unwind(AssertUnwindSafe(|| drop(self.future.take()))) {
+    fn finish<T>(self: Pin<&mut Self>, mut result: Result<T, JoinError>) -> TaskOutput<T> {
+        let mut this = self.project();
+        if let Err(panic) = catch_unwind(AssertUnwindSafe(|| this.future.set(None))) {
             let previous = std::mem::replace(&mut result, Err(JoinError::panicked(panic)));
             // Both a completed output and its future can have panicking
             // destructors. Keep either unwind out of async-task's drop glue.
@@ -167,17 +183,19 @@ impl<F: Future> TaskFuture<F> {
     }
 }
 
-impl<F: Future> Unpin for TaskFuture<F> {}
-
-impl<F: Future> Future for TaskFuture<F> {
-    type Output = TaskOutput<F::Output>;
+impl<F, T> Future for TaskFuture<F>
+where
+    F: Future<Output = Result<T, Aborted>>,
+{
+    type Output = TaskOutput<T>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let result = catch_unwind(AssertUnwindSafe(|| {
-            self.future
-                .as_mut()
+            self.as_mut()
+                .project()
+                .future
+                .as_pin_mut()
                 .expect("task polled after completion")
-                .as_mut()
                 .poll(cx)
         }));
         let result = match result {
@@ -187,14 +205,5 @@ impl<F: Future> Future for TaskFuture<F> {
             Err(panic) => Err(JoinError::panicked(panic)),
         };
         Poll::Ready(self.finish(result))
-    }
-}
-
-impl<F: Future> Drop for TaskFuture<F> {
-    fn drop(&mut self) {
-        if self.future.is_some() {
-            drop(self.finish(Err(JoinError::cancelled())));
-        }
-        self.shared.task_finished(self.id);
     }
 }

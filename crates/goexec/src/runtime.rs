@@ -163,7 +163,9 @@ impl Builder {
             hooks: self.hooks,
             state: Mutex::new(Scheduler::default()),
             ready: Injector::new(),
-            registry: (0..self.parallelism)
+            // External publishers still run concurrently with a single CPU
+            // permit. Keep their registration/removal locks sharded as well.
+            registry: (0..self.parallelism.max(16))
                 .map(|_| Mutex::new(Registry::default()))
                 .collect(),
             next_registry: AtomicUsize::new(0),
@@ -684,7 +686,27 @@ impl Shared {
             let index = shard.tasks.insert(abort.clone());
             TaskId { registry, index }
         };
-        let task = TaskFuture::new(Abortable::new(future, registration), self.clone(), id);
+        let future = Abortable::new(future, registration);
+        // Keep large futures out of the task header/result allocation. Small
+        // futures share that allocation and avoid an extra allocation/free.
+        if std::mem::size_of::<F>() > 64 {
+            self.spawn_registered(Box::pin(future), id, abort)
+        } else {
+            self.spawn_registered(future, id, abort)
+        }
+    }
+
+    fn spawn_registered<F, T>(
+        self: &Arc<Self>,
+        future: F,
+        id: TaskId,
+        abort: AbortHandle,
+    ) -> JoinHandle<T>
+    where
+        F: Future<Output = Result<T, futures::future::Aborted>> + Send + 'static,
+        T: Send + 'static,
+    {
+        let task = TaskFuture::new(future, self.clone(), id);
         let scheduler = self.clone();
         let (runnable, task) = async_task::spawn(task, move |runnable| scheduler.enqueue(runnable));
         runnable.schedule();
@@ -927,6 +949,8 @@ impl Shared {
     }
 
     fn run_worker(&self, worker: &Worker, local: &LocalQueue<Runnable>) {
+        // This worker is the only writer; metrics readers only load snapshots.
+        let mut total_polls = 0_u64;
         let mut stealers = Vec::new();
         let mut state = self.state.lock();
         loop {
@@ -956,7 +980,8 @@ impl Shared {
                     let mut polls = 0;
                     loop {
                         let _ = catch_unwind(AssertUnwindSafe(|| runnable.run()));
-                        worker.polls.fetch_add(1, Ordering::Relaxed);
+                        total_polls = total_polls.wrapping_add(1);
+                        worker.polls.store(total_polls, Ordering::Relaxed);
                         polls += 1;
                         // A permit belongs to this worker across a bounded run
                         // of polls. Returning callers take it at the next poll

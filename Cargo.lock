@@ -437,6 +437,7 @@ dependencies = [
  "futures",
  "loom",
  "parking_lot",
+ "pin-project-lite",
  "slab",
  "tokio",
 ]

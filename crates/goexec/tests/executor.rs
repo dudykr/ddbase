@@ -471,3 +471,93 @@ fn join_transfers_a_pinned_output_and_drops_it_once() {
     drop(value);
     assert_eq!(drops.load(Ordering::SeqCst), 1);
 }
+
+#[test]
+fn small_and_large_futures_stay_pinned_and_are_destroyed_once_after_panics() {
+    struct PinnedFuture<const N: usize> {
+        address: std::cell::Cell<usize>,
+        polls: std::cell::Cell<usize>,
+        drops: Arc<AtomicUsize>,
+        entered: mpsc::Sender<()>,
+        complete: bool,
+        poll_panics: bool,
+        drop_panics: bool,
+        _pin: std::marker::PhantomPinned,
+        _padding: [u8; N],
+    }
+
+    impl<const N: usize> Future for PinnedFuture<N> {
+        type Output = ();
+
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+            let this = self.as_ref().get_ref();
+            let address = this as *const Self as usize;
+            let polls = this.polls.get();
+            if polls == 0 {
+                this.address.set(address);
+                this.entered.send(()).unwrap();
+            } else {
+                assert_eq!(this.address.get(), address, "future moved between polls");
+            }
+            this.polls.set(polls + 1);
+            if polls != 0 && this.complete {
+                assert!(!this.poll_panics, "poll panic");
+                Poll::Ready(())
+            } else {
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            }
+        }
+    }
+
+    impl<const N: usize> Drop for PinnedFuture<N> {
+        fn drop(&mut self) {
+            assert_eq!(
+                self.address.get(),
+                self as *const Self as usize,
+                "future moved before drop"
+            );
+            assert_eq!(self.drops.fetch_add(1, Ordering::SeqCst), 0);
+            assert!(!self.drop_panics, "drop panic");
+        }
+    }
+
+    fn check<const N: usize>() {
+        for complete in [false, true] {
+            for poll_panics in [false, true] {
+                for drop_panics in [false, true] {
+                    let rt = Runtime::builder().parallelism(1).build().unwrap();
+                    let drops = Arc::new(AtomicUsize::new(0));
+                    let (entered, started) = mpsc::channel();
+                    let task = rt.spawn(PinnedFuture {
+                        address: std::cell::Cell::new(0),
+                        polls: std::cell::Cell::new(0),
+                        drops: drops.clone(),
+                        entered,
+                        complete,
+                        poll_panics,
+                        drop_panics,
+                        _pin: std::marker::PhantomPinned,
+                        _padding: [0; N],
+                    });
+                    started.recv_timeout(TIMEOUT).unwrap();
+                    if !complete {
+                        task.abort();
+                    }
+                    let result = futures::executor::block_on(task);
+                    if drop_panics || (complete && poll_panics) {
+                        assert!(result.unwrap_err().is_panic());
+                    } else if complete {
+                        result.unwrap();
+                    } else {
+                        assert!(result.unwrap_err().is_cancelled());
+                    }
+                    assert!(rt.shutdown_timeout(TIMEOUT));
+                    assert_eq!(drops.load(Ordering::SeqCst), 1);
+                }
+            }
+        }
+    }
+    check::<0>();
+    check::<1024>();
+}

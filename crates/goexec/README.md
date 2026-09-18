@@ -99,15 +99,19 @@ must actually be blocking; putting CPU work there can oversubscribe the machine.
 A worker retains its permit for at most 64 polls before a scheduler checkpoint,
 and checks the injection queue at least every 16 polls. Returning callers and
 shutdown force an earlier checkpoint at the next poll boundary. Task registration
-and removal use sharded `parking_lot`-protected slabs. Slots are reused only
+and removal use sharded `parking_lot`-protected slabs, with at least 16 shards
+so external submissions and completions do not share one lock at parallelism 1. Slots are reused only
 after their owning task future is destroyed; cancellation handles retain
 independent state rather than slot indices. Normal local queue
 operations do not acquire the scheduler mutex or update a shared task counter.
 Workers retain their rotated work-stealing peer lists until the worker set grows
-and increment poll metrics atomically. The first search and permit acquisition
+and publish poll metrics with single-writer atomic stores. The first search and permit acquisition
 share the scheduler lock; searches during the bounded poll loop run without it.
-Tasks wrap their pinned user futures in
-`Abortable`, which checks cancellation and registers pending-task wakeups.
+Tasks pin user futures of up to 64 bytes directly inside async-task storage,
+avoiding a second heap allocation. Larger futures retain a separate pinned box
+to bound the task header/result allocation. `pin-project-lite` provides the projection and pinned drop;
+clearing the pinned future catches destructor panics without moving the future.
+`Abortable` checks cancellation and registers pending-task wakeups.
 Task results use async-task's join storage directly, without a separate oneshot
 allocation. Dropping a join handle still detaches the task. A result wrapper
 isolates destructor panics for detached or completed-but-unjoined outputs.
