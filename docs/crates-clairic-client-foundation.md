@@ -36,7 +36,7 @@ Run `cargo test` from the repository root, targeted `cargo test -p clairic-clien
 
 ## Dependencies and Integrations
 
-Registry-only reqwest, serde, serde_json, base64, thiserror, and tracing. Tokio is used by examples and tests. The Cloudflare model remains a preview upstream API.
+Registry-only reqwest, serde, serde_json, base64, thiserror, and tracing. The TLS dependency chain uses package-scoped license exceptions in `deny.toml`: ISC for ring, rustls-webpki, and untrusted; CDLA-Permissive-2.0 for webpki-roots. Preserve their upstream notices. Tokio is used by examples and tests. The Cloudflare model remains a preview upstream API.
 
 ## Change Triggers
 
