@@ -1246,8 +1246,8 @@ mod tests {
 
         let s = BytesString::from("localhost:8080");
         let result = s.to_socket_addrs();
-        // This might fail depending on system configuration, so we just check it
-        // compiles
+        // This might fail depending on system configuration, so we just check
+        // it compiles
         let _ = result;
     }
 

@@ -83,9 +83,10 @@ where
 
                 // TODO(kdy1): Add `spawn` API to `chili::Scope` and use it.
                 // The original code is
-                // scope.spawn(move |_| bridge_producer_consumer(n, before_skip, NoopConsumer));
-                // Run the skipped part separately for side effects.
-                // We'll still get any panics propagated back by the scope.
+                // scope.spawn(move |_| bridge_producer_consumer(n, before_skip,
+                // NoopConsumer)); Run the skipped part
+                // separately for side effects. We'll still get
+                // any panics propagated back by the scope.
                 bridge_producer_consumer(n, before_skip, NoopConsumer);
 
                 callback.callback(after_skip)

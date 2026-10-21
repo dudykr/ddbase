@@ -140,7 +140,8 @@ impl<'data, T: Send> IndexedParallelIterator for Drain<'data, T> {
         CB: ProducerCallback<Self::Item>,
     {
         unsafe {
-            // Make the vector forget about the drained items, and temporarily the tail too.
+            // Make the vector forget about the drained items, and temporarily
+            // the tail too.
             self.vec.set_len(self.range.start);
 
             // Create the producer as the exclusive "owner" of the slice.
@@ -156,7 +157,8 @@ impl<'data, T: Send> Drop for Drain<'data, T> {
     fn drop(&mut self) {
         let Range { start, end } = self.range;
         if self.vec.len() == self.orig_len {
-            // We must not have produced, so just call a normal drain to remove the items.
+            // We must not have produced, so just call a normal drain to remove
+            // the items.
             self.vec.drain(start..end);
         } else if start == end {
             // Empty range, so just restore the length to its original state
@@ -165,7 +167,8 @@ impl<'data, T: Send> Drop for Drain<'data, T> {
             }
         } else if end < self.orig_len {
             // The producer was responsible for consuming the drained items.
-            // Move the tail items to their new place, then set the length to include them.
+            // Move the tail items to their new place, then set the length to
+            // include them.
             unsafe {
                 let ptr = self.vec.as_mut_ptr().add(start);
                 let tail_ptr = self.vec.as_ptr().add(end);

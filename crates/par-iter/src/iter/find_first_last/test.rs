@@ -6,9 +6,9 @@ fn same_range_first_consumers_return_correct_answer() {
     let first_found = AtomicUsize::new(usize::max_value());
     let far_right_consumer = FindConsumer::new(&find_op, MatchPosition::Leftmost, &first_found);
 
-    // We save a consumer that will be far to the right of the main consumer (and
-    // therefore not sharing an index range with that consumer) for fullness
-    // testing
+    // We save a consumer that will be far to the right of the main consumer
+    // (and therefore not sharing an index range with that consumer) for
+    // fullness testing
     let consumer = far_right_consumer.split_off_left();
 
     // split until we have an indivisible range
@@ -55,9 +55,9 @@ fn same_range_last_consumers_return_correct_answer() {
     }
 
     let reducer = consumer.to_reducer();
-    // due to the exact calculation in split_off_left, the very last consumer has a
-    // range of width 2, so we use the second-to-last consumer instead to get
-    // the same boundary on both folders
+    // due to the exact calculation in split_off_left, the very last consumer
+    // has a range of width 2, so we use the second-to-last consumer instead
+    // to get the same boundary on both folders
     let consumer = consumer.split_off_left();
     let left_folder = consumer.split_off_left().into_folder();
     let right_folder = consumer.into_folder();

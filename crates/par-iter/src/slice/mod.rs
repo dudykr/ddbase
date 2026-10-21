@@ -566,8 +566,8 @@ pub trait ParallelSliceMut<T: Send> {
             return;
         }
 
-        // Helper macro for indexing our vector by the smallest possible type, to reduce
-        // allocation.
+        // Helper macro for indexing our vector by the smallest possible type,
+        // to reduce allocation.
         macro_rules! sort_by_key {
             ($t:ty) => {{
                 let mut indices: Vec<_> = slice
@@ -575,9 +575,10 @@ pub trait ParallelSliceMut<T: Send> {
                     .enumerate()
                     .map(|(i, x)| (f(&*x), i as $t))
                     .collect();
-                // The elements of `indices` are unique, as they are indexed, so any sort will
-                // be stable with respect to the original slice. We use `sort_unstable`
-                // here because it requires less memory allocation.
+                // The elements of `indices` are unique, as they are indexed, so any
+                // sort will be stable with respect to the original slice. We
+                // use `sort_unstable` here because it requires less memory
+                // allocation.
                 indices.par_sort_unstable();
                 for i in 0..len {
                     let mut index = indices[i].1;

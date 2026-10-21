@@ -75,7 +75,8 @@ where
     let par_iter = pi.into_par_iter();
     match par_iter.opt_len() {
         Some(len) => {
-            // Pseudo-specialization. See impl of ParallelExtend for Vec for more details.
+            // Pseudo-specialization. See impl of ParallelExtend for Vec for
+            // more details.
             let mut vec = Vec::new();
             super::collect::special_extend(par_iter, len, &mut vec);
             Either::Left(vec)
@@ -238,7 +239,8 @@ where
     where
         I: IntoParallelIterator<Item = (K, V)>,
     {
-        // See the map_collect benchmarks in rayon-demo for different strategies.
+        // See the map_collect benchmarks in rayon-demo for different
+        // strategies.
         extend_reserved!(self, par_iter);
     }
 }
@@ -577,17 +579,21 @@ where
     where
         I: IntoParallelIterator<Item = T>,
     {
-        // See the vec_collect benchmarks in rayon-demo for different strategies.
+        // See the vec_collect benchmarks in rayon-demo for different
+        // strategies.
         let par_iter = par_iter.into_par_iter();
         match par_iter.opt_len() {
             Some(len) => {
-                // When Rust gets specialization, we can get here for indexed iterators
-                // without relying on `opt_len`.  Until then, `special_extend()` fakes
-                // an unindexed mode on the promise that `opt_len()` is accurate.
+                // When Rust gets specialization, we can get here for indexed
+                // iterators without relying on `opt_len`.
+                // Until then, `special_extend()` fakes
+                // an unindexed mode on the promise that `opt_len()` is
+                // accurate.
                 super::collect::special_extend(par_iter, len, self);
             }
             None => {
-                // This works like `extend`, but `Vec::append` is more efficient.
+                // This works like `extend`, but `Vec::append` is more
+                // efficient.
                 let list = par_iter.drive_unindexed(ListVecConsumer);
                 self.reserve(list.iter().map(Vec::len).sum());
                 for mut other in list {

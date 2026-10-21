@@ -72,8 +72,8 @@ impl<'c, T> CollectResult<'c, T> {
 
 impl<'c, T> Drop for CollectResult<'c, T> {
     fn drop(&mut self) {
-        // Drop the first `self.initialized_len` elements, which have been recorded
-        // to be initialized by the folder.
+        // Drop the first `self.initialized_len` elements, which have been
+        // recorded to be initialized by the folder.
         unsafe {
             ptr::drop_in_place(slice::from_raw_parts_mut(
                 self.start.0,
@@ -173,8 +173,9 @@ impl<'c, T> Reducer<CollectResult<'c, T>> for CollectReducer {
         right: CollectResult<'c, T>,
     ) -> CollectResult<'c, T> {
         // Merge if the CollectResults are adjacent and in left to right order
-        // else: drop the right piece now and total length will end up short in the end,
-        // when the correctness of the collected result is asserted.
+        // else: drop the right piece now and total length will end up short in
+        // the end, when the correctness of the collected result is
+        // asserted.
         unsafe {
             let left_end = left.start.0.add(left.initialized_len);
             if left_end == right.start.0 {

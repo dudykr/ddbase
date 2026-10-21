@@ -39,8 +39,9 @@ fn stealing_nested_children_and_blocking_their_owners_keeps_progress() {
                     spawn(async {
                         let (sent, received) = mpsc::channel();
                         let child = spawn(async move {
-                            // Both generations originate in local queues and may be
-                            // moved by fast batch steals before their owner blocks.
+                            // Both generations originate in local queues and
+                            // may be moved by fast
+                            // batch steals before their owner blocks.
                             let (sent_again, received_again) = mpsc::channel();
                             let grandchild = spawn(async move {
                                 sent_again.send(7).unwrap();
@@ -595,7 +596,8 @@ fn returning_callers_reacquire_permits_in_fifo_order() {
     started_rx.recv_timeout(TIMEOUT).unwrap();
     let (held_tx, held_rx) = mpsc::channel();
     let (release_holder, holder_rx) = mpsc::channel();
-    // Deliberately unannotated: this test controls a thread retaining its permit.
+    // Deliberately unannotated: this test controls a thread retaining its
+    // permit.
     let holder = rt.spawn(async move {
         held_tx.send(()).unwrap();
         holder_rx.recv().unwrap();

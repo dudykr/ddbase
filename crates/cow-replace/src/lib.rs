@@ -331,7 +331,8 @@ mod tests {
         let s = "hello world hello".to_string();
         let result = s.replace_all_str("hello", "hi");
         assert_eq!(result, "hi world hi");
-        assert_eq!(s, "hello world hello"); // Original string should remain unchanged
+        assert_eq!(s, "hello world hello"); // Original string should remain
+                                            // unchanged
 
         // Test with no occurrences
         let s = "hello world".to_string();
@@ -386,7 +387,8 @@ mod tests {
         let s: Cow<'_, str> = Cow::Borrowed("hello world hello");
         let result = s.replace_all_str("hello", "hi");
         assert_eq!(result, "hi world hi");
-        assert_eq!(s, "hello world hello"); // Original string should remain unchanged
+        assert_eq!(s, "hello world hello"); // Original string should remain
+                                            // unchanged
 
         let s: Cow<'_, str> = Cow::Borrowed("hello world");
         let result = s.replace_all_str("xyz", "abc");

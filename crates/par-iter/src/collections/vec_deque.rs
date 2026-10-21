@@ -152,7 +152,8 @@ impl<'a, T: Send> IndexedParallelIterator for Drain<'a, T> {
 impl<'a, T: Send> Drop for Drain<'a, T> {
     fn drop(&mut self) {
         if self.deque.len() != self.orig_len - self.range.len() {
-            // We must not have produced, so just call a normal drain to remove the items.
+            // We must not have produced, so just call a normal drain to remove
+            // the items.
             assert_eq!(self.deque.len(), self.orig_len);
             self.deque.drain(self.range.clone());
         }

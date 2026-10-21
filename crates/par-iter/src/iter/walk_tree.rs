@@ -245,27 +245,28 @@ where
         }
         // now take half of the front.
         let right_children = split_vec(&mut self.to_explore);
-        let right = right_children
-            .map(|c| {
-                let right_seen = std::mem::take(&mut self.seen); // postfix -> upper nodes are processed last
-                WalkTreePostfixProducer {
-                    to_explore: c,
-                    seen: right_seen,
-                    children_of: self.children_of,
-                }
-            })
-            .or_else(|| {
-                // we can still try to divide 'seen'
-                let right_seen = split_vec(&mut self.seen);
-                right_seen.map(|mut s| {
-                    std::mem::swap(&mut self.seen, &mut s);
+        let right =
+            right_children
+                .map(|c| {
+                    let right_seen = std::mem::take(&mut self.seen); // postfix -> upper nodes are processed last
                     WalkTreePostfixProducer {
-                        to_explore: Default::default(),
-                        seen: s,
+                        to_explore: c,
+                        seen: right_seen,
                         children_of: self.children_of,
                     }
                 })
-            });
+                .or_else(|| {
+                    // we can still try to divide 'seen'
+                    let right_seen = split_vec(&mut self.seen);
+                    right_seen.map(|mut s| {
+                        std::mem::swap(&mut self.seen, &mut s);
+                        WalkTreePostfixProducer {
+                            to_explore: Default::default(),
+                            seen: s,
+                            children_of: self.children_of,
+                        }
+                    })
+                });
         (self, right)
     }
 

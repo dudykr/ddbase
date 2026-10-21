@@ -254,7 +254,8 @@ fn poll_and_drop_panics_are_join_errors() {
             .unwrap_err()
             .is_panic()
     );
-    // These are separate destructor unwinds, not a double panic while unwinding.
+    // These are separate destructor unwinds, not a double panic while
+    // unwinding.
     assert!(
         futures::executor::block_on(rt.spawn(DoubleDropFuture(PanicOnDrop)))
             .unwrap_err()

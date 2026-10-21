@@ -44,11 +44,11 @@ where
     {
         let Chain { a, b } = self;
 
-        // If we returned a value from our own `opt_len`, then the collect consumer in
-        // particular will balk at being treated like an actual
-        // `UnindexedConsumer`.  But when we do know the length, we can use
-        // `Consumer::split_at` instead, and this is still harmless for other
-        // truly-unindexed consumers too.
+        // If we returned a value from our own `opt_len`, then the collect
+        // consumer in particular will balk at being treated like an
+        // actual `UnindexedConsumer`.  But when we do know the length,
+        // we can use `Consumer::split_at` instead, and this is still
+        // harmless for other truly-unindexed consumers too.
         let (left, right, reducer) = if let Some(len) = a.opt_len() {
             consumer.split_at(len)
         } else {
