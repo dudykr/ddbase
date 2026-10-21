@@ -1,6 +1,6 @@
 use std::iter;
 
-use super::{plumbing::*, *};
+use super::*;
 
 /// `Cloned` is an iterator that clones the elements of an underlying iterator.
 ///

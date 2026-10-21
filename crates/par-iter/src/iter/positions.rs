@@ -1,6 +1,6 @@
 use std::fmt::{self, Debug};
 
-use super::{plumbing::*, *};
+use super::*;
 
 /// `Positions` takes a predicate `predicate` and filters out elements that
 /// match, yielding their indices.

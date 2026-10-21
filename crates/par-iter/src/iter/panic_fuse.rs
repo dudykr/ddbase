@@ -3,7 +3,7 @@ use std::{
     thread,
 };
 
-use super::{plumbing::*, *};
+use super::*;
 
 /// `PanicFuse` is an adaptor that wraps an iterator with a fuse in case
 /// of panics, to halt all threads as soon as possible.

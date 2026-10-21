@@ -3,7 +3,7 @@ use std::{
     iter,
 };
 
-use super::{plumbing::*, *};
+use super::*;
 
 /// `Inspect` is an iterator that calls a function with a reference to each
 /// element before yielding it.

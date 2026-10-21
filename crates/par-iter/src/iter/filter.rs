@@ -1,6 +1,6 @@
 use std::fmt::{self, Debug};
 
-use super::{plumbing::*, *};
+use super::*;
 
 /// `Filter` takes a predicate `filter_op` and filters out elements that match.
 /// This struct is created by the [`filter()`] method on [`ParallelIterator`]

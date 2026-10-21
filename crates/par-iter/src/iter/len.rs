@@ -1,4 +1,4 @@
-use super::{plumbing::*, *};
+use super::*;
 
 /// `MinLen` is an iterator that imposes a minimum length on iterator splits.
 /// This struct is created by the [`with_min_len()`] method on

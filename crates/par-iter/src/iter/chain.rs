@@ -2,7 +2,7 @@ use std::iter;
 
 use par_core::join;
 
-use super::{plumbing::*, *};
+use super::*;
 
 /// `Chain` is an iterator that joins `b` after `a` in one continuous iterator.
 /// This struct is created by the [`chain()`] method on [`ParallelIterator`]

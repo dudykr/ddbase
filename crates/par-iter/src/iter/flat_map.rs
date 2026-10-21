@@ -1,6 +1,6 @@
 use std::fmt::{self, Debug};
 
-use super::{plumbing::*, *};
+use super::*;
 
 /// `FlatMap` maps each element to a parallel iterator, then flattens these
 /// iterators together. This struct is created by the [`flat_map()`] method on

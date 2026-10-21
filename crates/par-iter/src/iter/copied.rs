@@ -1,6 +1,6 @@
 use std::iter;
 
-use super::{plumbing::*, *};
+use super::*;
 
 /// `Copied` is an iterator that copies the elements of an underlying iterator.
 ///

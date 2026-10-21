@@ -1,4 +1,4 @@
-use super::{plumbing::*, *};
+use super::*;
 
 /// `InterleaveShortest` is an iterator that works similarly to
 /// `Interleave`, but this version stops returning elements once one

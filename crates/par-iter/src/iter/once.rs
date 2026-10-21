@@ -1,4 +1,4 @@
-use crate::iter::{plumbing::*, *};
+use crate::iter::*;
 
 /// Creates a parallel iterator that produces an element exactly once.
 ///

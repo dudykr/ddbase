@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use super::{plumbing::*, *};
+use super::*;
 
 /// `TakeAny` is an iterator that iterates over `n` elements from anywhere in
 /// `I`. This struct is created by the [`take_any()`] method on
@@ -107,7 +107,7 @@ struct TakeAnyFolder<'f, C> {
 }
 
 fn checked_decrement(u: &AtomicUsize) -> bool {
-    u.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |u| u.checked_sub(1))
+    u.try_update(Ordering::Relaxed, Ordering::Relaxed, |u| u.checked_sub(1))
         .is_ok()
 }
 
