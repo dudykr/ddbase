@@ -1,6 +1,6 @@
 use std::fmt::{self, Debug};
 
-use super::{plumbing::*, *};
+use super::*;
 
 /// `MapWith` is an iterator that transforms the elements of an underlying
 /// iterator.

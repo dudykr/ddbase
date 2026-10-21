@@ -1,6 +1,6 @@
 use std::fmt::{self, Debug};
 
-use super::{plumbing::*, *};
+use super::*;
 
 /// The `split` function takes arbitrary data and a closure that knows how to
 /// split it, and turns this into a `ParallelIterator`.

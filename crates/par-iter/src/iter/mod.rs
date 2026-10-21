@@ -2321,7 +2321,7 @@ pub trait ParallelIterator: Sized + Send {
     /// let result: Vec<_> = (0_usize..100)
     ///     .into_par_iter()
     ///     .take_any_while(|&x| {
-    ///         quota.fetch_update(Relaxed, Relaxed, |q| q.checked_sub(x))
+    ///         quota.try_update(Relaxed, Relaxed, |q| q.checked_sub(x))
     ///             .is_ok()
     ///     })
     ///     .collect();
@@ -2854,13 +2854,12 @@ pub trait IndexedParallelIterator: ParallelIterator {
     /// ```
     /// use par_iter::prelude::*;
     /// use std::cmp::Ordering::*;
-    /// use std::f64::NAN;
     ///
     /// let x = vec![1.0, 2.0, 3.0];
     /// assert_eq!(x.par_iter().partial_cmp(&vec![1.0, 3.0, 0.0]), Some(Less));
     /// assert_eq!(x.par_iter().partial_cmp(&vec![1.0, 2.0, 3.0]), Some(Equal));
     /// assert_eq!(x.par_iter().partial_cmp(&vec![1.0, 2.0]), Some(Greater));
-    /// assert_eq!(x.par_iter().partial_cmp(&vec![1.0, NAN]), None);
+    /// assert_eq!(x.par_iter().partial_cmp(&vec![1.0, f64::NAN]), None);
     /// ```
     fn partial_cmp<I>(self, other: I) -> Option<Ordering>
     where

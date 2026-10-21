@@ -302,7 +302,8 @@ impl Engine {
                                 let operation = case.operation(iteration);
                                 let start = latency.then(Instant::now);
                                 if matches!(operation, Op::Cpu | Op::Yield) {
-                                    // CPU work stays on executor workers for all modes.
+                                    // CPU work stays on executor workers for
+                                    // all modes.
                                     context.run(operation);
                                 } else if matches!(mode, Mode::SpawnBlocking) {
                                     context = tokio::task::spawn_blocking(move || {

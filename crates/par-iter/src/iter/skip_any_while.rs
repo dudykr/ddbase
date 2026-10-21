@@ -3,7 +3,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use super::{plumbing::*, *};
+use super::*;
 
 /// `SkipAnyWhile` is an iterator that skips over elements from anywhere in `I`
 /// until the callback returns `false`.

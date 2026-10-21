@@ -1,6 +1,6 @@
 use std::{fmt, marker::PhantomData};
 
-use crate::iter::{plumbing::*, *};
+use crate::iter::*;
 
 /// Creates a parallel iterator that produces nothing.
 ///

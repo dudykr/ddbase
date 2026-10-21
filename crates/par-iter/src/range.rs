@@ -202,9 +202,9 @@ macro_rules! indexed_range_impl {
 
             fn split_at(self, index: usize) -> (Self, Self) {
                 assert!(index <= self.range.len());
-                // For signed $t, the length and requested index could be greater than $t::MAX,
-                // and then `index as $t` could wrap to negative, so wrapping_add is
-                // necessary.
+                // For signed $t, the length and requested index could be greater than
+                // $t::MAX, and then `index as $t` could wrap to negative, so
+                // wrapping_add is necessary.
                 let mid = self.range.start.wrapping_add(index as $t);
                 let left = self.range.start..mid;
                 let right = mid..self.range.end;

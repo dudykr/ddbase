@@ -109,7 +109,8 @@ fn return_handoff_and_replacement_share_one_permit() {
             *permits += 1;
             call.resume(ticket);
         }
-        // Original poll can finish only after keeping or reacquiring its permit.
+        // Original poll can finish only after keeping or reacquiring its
+        // permit.
         let mut permits = gate.0.lock().unwrap();
         assert_eq!(*permits, 1);
         *permits -= 1;
@@ -148,7 +149,8 @@ fn stale_observation_cannot_reclaim_a_later_call() {
 
 #[test]
 fn enqueue_and_shutdown_cannot_lose_a_parked_worker() {
-    // Two workers plus registration/enqueue/close need a bounded schedule search.
+    // Two workers plus registration/enqueue/close need a bounded schedule
+    // search.
     let mut model = loom::model::Builder::new();
     model.preemption_bound = Some(2);
     model.check(|| {

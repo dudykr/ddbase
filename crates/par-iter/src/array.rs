@@ -78,7 +78,8 @@ impl<T: Send, const N: usize> IndexedParallelIterator for IntoIter<T, N> {
         CB: ProducerCallback<Self::Item>,
     {
         unsafe {
-            // Drain every item, and then the local array can just fall out of scope.
+            // Drain every item, and then the local array can just fall out of
+            // scope.
             let mut array = ManuallyDrop::new(self.array);
             let producer = DrainProducer::new(array.as_mut_slice());
             callback.callback(producer)

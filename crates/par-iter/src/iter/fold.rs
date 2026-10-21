@@ -1,6 +1,6 @@
 use std::fmt::{self, Debug};
 
-use super::{plumbing::*, *};
+use super::*;
 
 impl<U, I, ID, F> Fold<I, ID, F>
 where

@@ -1,6 +1,6 @@
 use std::fmt::{self, Debug};
 
-use super::{plumbing::*, *};
+use super::*;
 
 /// `FlatMapIter` maps each element to a serial iterator, then flattens these
 /// iterators together. This struct is created by the [`flat_map_iter()`] method

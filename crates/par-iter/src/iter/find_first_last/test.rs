@@ -3,16 +3,16 @@ use super::*;
 #[test]
 fn same_range_first_consumers_return_correct_answer() {
     let find_op = |x: &i32| x % 2 == 0;
-    let first_found = AtomicUsize::new(usize::max_value());
+    let first_found = AtomicUsize::new(usize::MAX);
     let far_right_consumer = FindConsumer::new(&find_op, MatchPosition::Leftmost, &first_found);
 
-    // We save a consumer that will be far to the right of the main consumer (and
-    // therefore not sharing an index range with that consumer) for fullness
-    // testing
+    // We save a consumer that will be far to the right of the main consumer
+    // (and therefore not sharing an index range with that consumer) for
+    // fullness testing
     let consumer = far_right_consumer.split_off_left();
 
     // split until we have an indivisible range
-    let bits_in_usize = usize::min_value().count_zeros();
+    let bits_in_usize = usize::MIN.count_zeros();
 
     for _ in 0..bits_in_usize {
         consumer.split_off_left();
@@ -49,15 +49,15 @@ fn same_range_last_consumers_return_correct_answer() {
     let far_left_consumer = consumer.split_off_left();
 
     // split until we have an indivisible range
-    let bits_in_usize = usize::min_value().count_zeros();
+    let bits_in_usize = usize::MIN.count_zeros();
     for _ in 0..bits_in_usize {
         consumer.split_off_left();
     }
 
     let reducer = consumer.to_reducer();
-    // due to the exact calculation in split_off_left, the very last consumer has a
-    // range of width 2, so we use the second-to-last consumer instead to get
-    // the same boundary on both folders
+    // due to the exact calculation in split_off_left, the very last consumer
+    // has a range of width 2, so we use the second-to-last consumer instead
+    // to get the same boundary on both folders
     let consumer = consumer.split_off_left();
     let left_folder = consumer.split_off_left().into_folder();
     let right_folder = consumer.into_folder();
@@ -79,7 +79,7 @@ fn same_range_last_consumers_return_correct_answer() {
 // input to find_first/find_last, so we test the folder directly here instead.
 #[test]
 fn find_first_folder_does_not_clobber_first_found() {
-    let best_found = AtomicUsize::new(usize::max_value());
+    let best_found = AtomicUsize::new(usize::MAX);
     let f = FindFolder {
         find_op: &(|&_: &i32| -> bool { true }),
         boundary: 0,

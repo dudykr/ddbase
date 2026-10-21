@@ -1,6 +1,6 @@
 use std::fmt::{self, Debug};
 
-use super::{plumbing::*, *};
+use super::*;
 
 /// `Update` is an iterator that mutates the elements of an
 /// underlying iterator before they are yielded.

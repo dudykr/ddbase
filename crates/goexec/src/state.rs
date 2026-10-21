@@ -41,8 +41,9 @@ impl CallState {
             .is_ok()
     }
 
-    // Caller must hold the scheduler mutex, reserve a replacement, and decrement
-    // the permit count before unlocking. A losing exit_fast waits for this lock.
+    // Caller must hold the scheduler mutex, reserve a replacement, and
+    // decrement the permit count before unlocking. A losing exit_fast waits
+    // for this lock.
     pub(crate) fn detach(&self, ticket: u64) -> bool {
         self.0
             .compare_exchange(

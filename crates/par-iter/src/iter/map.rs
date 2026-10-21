@@ -3,7 +3,7 @@ use std::{
     iter,
 };
 
-use super::{plumbing::*, *};
+use super::*;
 
 /// `Map` is an iterator that transforms the elements of an underlying iterator.
 ///

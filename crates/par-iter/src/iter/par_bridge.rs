@@ -116,7 +116,7 @@ impl<Iter: Iterator + Send> UnindexedProducer for &IterParallelProducer<'_, Iter
         // Check if the iterator is exhausted
         let update = self
             .split_count
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |c| c.checked_sub(1));
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |c| c.checked_sub(1));
         (self, update.is_ok().then_some(self))
     }
 

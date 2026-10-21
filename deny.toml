@@ -75,7 +75,14 @@ allow = [
 confidence-threshold = 0.8
 # Allow 1 or more licenses on a per-crate basis, so that particular licenses
 # aren't accepted for every possible crate as with the normal allow list
-exceptions = [{ allow = ["BUSL-1.1"], name = "webc" }]
+exceptions = [
+  { allow = ["BUSL-1.1"], name = "webc" },
+  # Clairic's rustls transport: keep these permissions scoped to its TLS dependencies.
+  { allow = ["ISC"], name = "ring" },
+  { allow = ["ISC"], name = "rustls-webpki" },
+  { allow = ["ISC"], name = "untrusted" },
+  { allow = ["CDLA-Permissive-2.0"], name = "webpki-roots" },
+]
 
 [[licenses.clarify]]
 # The name of the crate the clarification applies to

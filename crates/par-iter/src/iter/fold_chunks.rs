@@ -1,6 +1,6 @@
 use std::fmt::{self, Debug};
 
-use super::{chunks::ChunkProducer, plumbing::*, *};
+use super::{chunks::ChunkProducer, *};
 use crate::math::div_round_up;
 
 /// `FoldChunks` is an iterator that groups elements of an underlying iterator

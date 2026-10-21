@@ -1,6 +1,6 @@
 use std::iter;
 
-use super::{plumbing::*, *};
+use super::*;
 
 /// `Rev` is an iterator that produces elements in reverse order. This struct
 /// is created by the [`rev()`] method on [`IndexedParallelIterator`]
